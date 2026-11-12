@@ -1,0 +1,12 @@
+{
+  "name": "conflict-ledger-skill",
+  "owner": {"name": "LeeGyeongPil"},
+  "description": "Agent skill that audits git merge conflict resolutions against the merge base.",
+  "plugins": [
+    {
+      "name": "conflict-ledger",
+      "source": "./",
+      "description": "Classifies git merge conflicts against the merge base and audits that a resolution kept both sides' changes."
+    }
+  ]
+}
