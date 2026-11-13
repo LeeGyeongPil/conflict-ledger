@@ -11,7 +11,7 @@ as in 0.1.1; only the version number in the script changed.
 ### Fixed
 - In a pre-release evaluation a strong model sometimes answered an image conflict (base, ours, theirs and a resolved `.png`) by viewing the images instead of running the script. The "First command" section of `SKILL.md` now says that it holds for every file type: images and other non-text files go to the same `verify` command, viewing an image or comparing its pixels is not an audit, and the script's exit code and message are the answer even when the files cannot be line-audited.
 
-### Known issues
+**Known issues (still open from 0.1.1):**
 - A missing input file's error (`file_missing`) still says the file was not found without saying how to fix it.
 
 ## [0.1.1] - 2026-11-13
