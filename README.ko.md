@@ -4,7 +4,7 @@
 
 git merge·rebase·cherry-pick 충돌을 위한 에이전트 스킬입니다. 코딩 에이전트가 충돌을 풀면, 번들 Python 스크립트가 모든 덩어리(hunk)를 공통 조상(병합 기준점, base)에 대조해 분류하고, 결과가 양쪽 변경을 줄 단위로 모두 남겼는지 검사합니다. 해결 결과가 테스트를 통과해도 한쪽 작업이 조용히 사라질 수 있는데, 이 감사가 커밋 전에 그것을 잡습니다.
 
-현재 버전: 0.1.1 — [CHANGELOG.md](CHANGELOG.md) 참고.
+현재 버전: 0.1.2 — [CHANGELOG.md](CHANGELOG.md) 참고.
 
 ![데모 실행: 잘못된 해결 두 개는 걸리고, 양쪽을 합친 해결은 통과](docs/images/01-hero.ko.png)
 *`demo` 는 진짜 충돌이 있는 임시 저장소를 만듭니다. "ours"나 "theirs"를 통째로 고르면 종료 코드 1, 양쪽을 합치면 0 입니다.*
@@ -331,7 +331,7 @@ python3 skills/conflict-ledger/scripts/conflict_ledger.py --lang ko verify --bas
 | 필요 없을 때 안 불림 | 12/12 |
 | 스킬로 푼 작업 | 7/7 |
 | 스킬 없이 푼 작업(기준선) | 1/7 |
-| 평균 점수 차이(Δ) | +0.50 |
+| 평균 점수 차이(Δ) | +0.53 |
 | 가짜 스크립트를 잡아낸 비율 | 7/7 |
 | Codex CLI | 작업 7/7 통과 · 확인됨 |
 
@@ -339,7 +339,7 @@ Claude Code 2.1.322 · sonnet · 케이스마다 3회 · 2026-11-13 측정 · co
 <!-- skill-eval:end -->
 
 검토 중 확인된 동작(깨끗한 컨테이너와 로컬 실행):
-- 테스트 196개가 통과하고, 이 README의 예시 출력이 실제 실행과 일치합니다.
+- 테스트가 통과하고(git 태그를 읽는 테스트는 태그 없는 사본에서 건너뜁니다), 이 README의 예시 출력이 실제 실행과 일치합니다.
 - `resolve-trivial` 은 이미 일부 또는 전부 손으로 해결한 파일을 거부합니다(종료 코드 3, 아무것도 쓰지 않음). 기존 `--out` 파일은 손으로 편집한 것만 거부하고, 아직 원래 충돌 상태면 덮어씁니다(`--force` 로 강제).
 - 리베이스 중에는 git 정의대로 ours/theirs 라벨이 뒤바뀌며(`ours` 는 리베이스 대상 브랜치), 보고서가 어느 쪽인지 밝힙니다.
 - `verify --commit` 은 작업 트리를 건드리지 않고 기존 부모 둘짜리 병합 커밋을 검사합니다.
@@ -388,7 +388,7 @@ uv sync && uv run pytest -q
 `evals/` 에는 `claude plugin eval` 형식의 발동 12개·미발동 12개·작업 7개 케이스가 있고(입력은 `evals/fixtures/`), `tools/build_evals.py` 가 다시 만듭니다.
 
 ## Changelog (변경 기록)
-현재 버전: 0.1.1. 릴리스마다 바뀐 점과 알려진 문제는 [CHANGELOG.md](CHANGELOG.md) 에 있습니다.
+현재 버전: 0.1.2. 릴리스마다 바뀐 점과 알려진 문제는 [CHANGELOG.md](CHANGELOG.md) 에 있습니다.
 
 ## License
 MIT

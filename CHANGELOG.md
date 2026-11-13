@@ -3,6 +3,17 @@
 All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [0.1.2] - 2026-11-13
+
+A skill-document release. The script's behavior, exit codes, finding kinds, `--json` fields and receipts are the same
+as in 0.1.1; only the version number in the script changed.
+
+### Fixed
+- In a pre-release evaluation a strong model sometimes answered an image conflict (base, ours, theirs and a resolved `.png`) by viewing the images instead of running the script. The "First command" section of `SKILL.md` now says that it holds for every file type: images and other non-text files go to the same `verify` command, viewing an image or comparing its pixels is not an audit, and the script's exit code and message are the answer even when the files cannot be line-audited.
+
+### Known issues
+- A missing input file's error (`file_missing`) still says the file was not found without saying how to fix it.
+
 ## [0.1.1] - 2026-11-13
 
 A correction release after a pre-release evaluation with several models. Exit codes, finding kinds, the `--json`
@@ -53,5 +64,6 @@ problem kind (`skill_folder`) are new.
 
 The issues known at 0.1.0 are listed under 0.1.1: fixed ones under Fixed, those that remain under Known issues.
 
+[0.1.2]: https://github.com/LeeGyeongPil/conflict-ledger/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/LeeGyeongPil/conflict-ledger/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/LeeGyeongPil/conflict-ledger/releases/tag/v0.1.0
