@@ -14,7 +14,6 @@ import struct
 import subprocess
 import sys
 import tempfile
-import zlib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -179,20 +178,6 @@ def fixture_blanked_markdown() -> dict[str, str]:
     return {"base.md": lines(base), "ours.md": lines(ours), "theirs.md": lines(theirs), "resolved.md": lines(resolved)}
 
 
-def tiny_png(color: int) -> bytes:
-    def chunk(kind: bytes, data: bytes) -> bytes:
-        body = kind + data
-        return struct.pack(">I", len(data)) + body + struct.pack(">I", zlib.crc32(body) & 0xFFFFFFFF)
-    raw = b"\x00" + bytes([color, color, color]) * 4
-    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 4, 1, 8, 2, 0, 0, 0)) \
-        + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b"")
-
-
-def fixture_binary_error() -> dict[str, bytes]:
-    return {"logo_base.png": tiny_png(10), "logo_ours.png": tiny_png(80), "logo_theirs.png": tiny_png(160),
-            "logo.png": tiny_png(200)}
-
-
 def packed_records(rows: list[tuple[int, str]]) -> bytes:
     """A small synthetic binary export: a header, then (id, length, name) records with NUL padding."""
     out = b"EXP1\x00\x00" + struct.pack("<H", len(rows))
@@ -334,14 +319,17 @@ def main() -> int:
                  "no-marker": grader("regex", "conflict_marker_left", extra="match: not_contains\n"),
                  "totals": grader("regex", got[-1])})
 
-    # 6 (error path): binary files cannot be audited line by line
-    files = fixture_binary_error()
-    task("error-binary",
-         "logo_base.png, logo_ours.png and logo_theirs.png are the three sides of a conflicting image, and logo.png is my "
-         "resolution. Audit the resolution and tell me whether it kept both sides' changes.",
-         files, {"binary-error": grader("regex", r"(binary file, line audit skipped|바이너리 파일, 줄 감사 건너뜀): \S*logo\S*\.png", target="trace")})
+    # 0.1.3: the image-only task case "task-error-binary" is removed, together with its four PNG fixtures
+    # (logo_base.png, logo_ours.png, logo_theirs.png, logo.png). Its prompt was:
+    #   "logo_base.png, logo_ours.png and logo_theirs.png are the three sides of a conflicting image, and logo.png is
+    #    my resolution. Audit the resolution and tell me whether it kept both sides' changes."
+    # Reason: in three pre-release evaluations in a row the largest model answered it at least once by looking at the
+    # pictures instead of running the script, and two SKILL.md rewrites did not change that. Images are not what this
+    # skill audits (line change sets of text files); the script can only report them as binary (exit 3). No grader was
+    # loosened: the whole case is gone. Binary handling is still guaranteed by tests/test_entry.py (content-based
+    # detection, a binary file next to a text file in a real merge) and by the measured error-path case below.
 
-    # 7 (error path, 0.1.1): binary content behind a .txt name; the verdict and its findings lines come from the script
+    # 6 (error path, 0.1.1): binary content behind a .txt name; the verdict and its findings lines come from the script
     files = fixture_disguised_binary()
     got = findings_for(files, ["verify", "--base", "export_base.txt", "--ours", "export_ours.txt", "--theirs",
                                "export_theirs.txt", "--result", "export.txt"])

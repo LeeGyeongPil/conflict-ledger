@@ -22,17 +22,15 @@ COMMANDS = {
     "task-trivial-then-judge": ["resolve-trivial", "--base", "base.py", "--ours", "ours.py", "--theirs", "theirs.py", "--out", "merged.py"],
     "task-duplicate-braces": ["verify", "--base", "base.go", "--ours", "ours.go", "--theirs", "theirs.go", "--result", "resolved.go"],
     "task-blanked-markdown": ["verify", "--base", "base.md", "--ours", "ours.md", "--theirs", "theirs.md", "--result", "resolved.md"],
-    "task-error-binary": ["verify", "--base", "logo_base.png", "--ours", "logo_ours.png", "--theirs", "logo_theirs.png",
-                          "--result", "logo.png"],
     "task-error-disguised-binary": ["verify", "--base", "export_base.txt", "--ours", "export_ours.txt", "--theirs",
                                     "export_theirs.txt", "--result", "export.txt"],
 }
 
-# sha256 (first 16 hex) of prompt.md + graders/*.md of the six 0.1.0 task cases: 0.1.1 must not change them
+# sha256 (first 16 hex) of prompt.md + graders/*.md of the measured task cases: their prompts and graders are frozen
 FROZEN_TASKS = {
     "task-blanked-markdown": "f59289c3835c328b",
     "task-duplicate-braces": "cff225034384709a",
-    "task-error-binary": "e4fd13a959b4c46f",
+    "task-error-disguised-binary": "02c90a0476b90447",
     "task-rebase-labels": "5adf5d07ee096999",
     "task-theirs-wholesale": "b9f42f2b6c06be66",
     "task-trivial-then-judge": "4533ac154d234f65",
@@ -74,16 +72,22 @@ def test_case_counts():
     assert len(tasks) >= 5 and len([t for t in tasks if t.name.startswith("task-error-")]) >= 1
 
 
-def test_composition_of_the_0_1_1_set():
+def test_composition_of_the_0_1_3_set():
     assert len(cases("trigger-")) == 12
     assert len(cases("notrigger-")) == 12 and len(cases("notrigger-near-")) == 8
     tasks = [c.name for c in cases("task-")]
-    assert len(tasks) == 7
-    assert [t for t in tasks if t.startswith("task-error-")] == ["task-error-binary", "task-error-disguised-binary"]
+    assert len(tasks) == 6
+    assert [t for t in tasks if t.startswith("task-error-")] == ["task-error-disguised-binary"]
+
+
+def test_image_only_case_is_removed():
+    """0.1.3 removed the image-only case: it measured whether a model looks at pictures, not the line audit."""
+    assert not (EVALS / "task-error-binary").exists()
+    assert not (EVALS / "fixtures" / "task-error-binary").exists()
 
 
 def test_existing_task_cases_are_unchanged():
-    """The six 0.1.0 task prompts and graders stay byte for byte the same (only a new case is added)."""
+    """The measured task prompts and graders stay byte for byte the same (0.1.3 only removed a whole case)."""
     for name, expected in FROZEN_TASKS.items():
         case = EVALS / name
         digest = hashlib.sha256()
@@ -133,8 +137,8 @@ def test_every_task_has_fixtures_and_a_value_grader():
 def test_grader_values_match_script_output(name, tmp_path):
     work = tmp_path / "w"
     shutil.copytree(EVALS / "fixtures" / name, work)
-    extra = ["--findings-file", "findings.txt"] if name != "task-error-binary" else []      # the 0.1.0 case asks for no file
-    run = subprocess.run([sys.executable, str(SCRIPT), "--lang", "en", *COMMANDS[name], *extra], cwd=work,
+    run = subprocess.run([sys.executable, str(SCRIPT), "--lang", "en", *COMMANDS[name], "--findings-file", "findings.txt"],
+                         cwd=work,
                          capture_output=True, text=True, check=False)
     trace = run.stdout + run.stderr
     findings = work / "findings.txt"
