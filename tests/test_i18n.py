@@ -26,7 +26,7 @@ def test_every_message_key_used_in_code_exists():
     used = set(re.findall(r'\bt\("([\w.-]+)"', SOURCE)) | set(re.findall(r'InputError\(\s*"([\w.]+)"', SOURCE))
     used |= {f"kind.{k}" for k in ("addition_dropped", "deletion_reverted", "base_line_lost", "conflict_marker_left",
                                    "addition_modified", "side_discarded", "new_line_introduced", "multiple_merge_bases",
-                                   "judgement_hunk", "file_skipped", "large_file")}
+                                   "judgement_hunk", "file_skipped", "large_file", "rename_followed")}
     assert used <= set(cl.MESSAGES["en"]), used - set(cl.MESSAGES["en"])
 
 

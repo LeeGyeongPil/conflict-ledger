@@ -167,3 +167,35 @@ def test_line_moved_a_little_is_not_lost():
     assert cl.audit(base, ours, theirs, moved) == {"errors": [], "warnings": [], "info": []}
     far = ["a", "b", "c", "d", "e", "f", "g", "H", "x", "y", "z", "NEW"]
     assert [f["kind"] for f in cl.audit(base, ours, theirs, far)["errors"]] == ["addition_dropped"]
+
+
+# --------------------------------------------------------------------------- F-1: the PASS line counts hunks, not notes
+
+def test_pass_line_counts_one_judged_hunk_once(conflict):
+    """One true conflict gives one INFO per side; the PASS line must still say 1 hunk (0.1.0 said 2)."""
+    conflict.write("f.txt", conflict.good)
+    code, out, _ = conflict.run("verify", "f.txt")
+    assert code == 0
+    assert out.count("judgement_hunk") == 2                       # two notes (ours, theirs) ...
+    assert out.strip().splitlines()[-1] == "PASS: no lost changes found (1 hunk needs judgement)"   # ... one hunk
+    _, ko, _ = conflict.run("--lang", "ko", "verify", "f.txt")
+    assert ko.strip().splitlines()[-1] == "통과: 유실된 변경 없음 (판단이 필요한 덩어리 1개)"
+
+
+def test_pass_line_counts_two_judged_hunks(tmp_path, run_cli):
+    base = list("abcdefgh")
+    ours = ["a", "B-main", "c", "d", "e", "f", "G-main", "h"]
+    theirs = ["a", "B-feat", "c", "d", "e", "f", "G-feat", "h"]
+    result = ["a", "B-main-feat", "c", "d", "e", "f", "G-main-feat", "h"]
+    for name, lines in (("b", base), ("o", ours), ("t", theirs), ("r", result)):
+        (tmp_path / name).write_text("".join(x + "\n" for x in lines))
+    code, out, _ = run_cli("verify", "--base", "b", "--ours", "o", "--theirs", "t", "--result", "r")
+    assert code == 0 and out.count("judgement_hunk") == 4
+    assert out.strip().splitlines()[-1] == "PASS: no lost changes found (2 hunks need judgement)"
+
+
+def test_pass_line_without_judged_hunks(tmp_path, run_cli):
+    for name, lines in (("b", ["a", "b"]), ("o", ["a", "b", "o"]), ("t", ["t", "a", "b"]), ("r", ["t", "a", "b", "o"])):
+        (tmp_path / name).write_text("".join(x + "\n" for x in lines))
+    code, out, _ = run_cli("verify", "--base", "b", "--ours", "o", "--theirs", "t", "--result", "r")
+    assert code == 0 and out.strip().splitlines()[-1] == "PASS: no lost changes found (0 hunks need judgement)"

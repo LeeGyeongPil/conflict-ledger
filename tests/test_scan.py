@@ -50,6 +50,7 @@ def test_status_merge_labels(conflict):
     assert st["operation"] == "merge"
     assert st["labels"] == {"ours": "HEAD", "theirs": "MERGE_HEAD"}
     assert st["unmerged"] == ["f.txt"]
+    assert st["unmerged_kinds"] == {"f.txt": "text"}          # 0.1.1: added next to the unchanged unmerged list
     assert st["my_commit_side"] is None
     _, text, _ = conflict.run("status")
     assert "stage 2 (ours) = HEAD (current branch)" in text
@@ -98,3 +99,40 @@ def test_scan_file_mode(tmp_path, run_cli):
     ledger = json.loads(out)
     assert code == 0 and ledger["files"][0]["path"] == "f.txt"
     assert len(ledger["files"][0]["hunks"]) == 4
+
+
+def test_status_reports_the_kind_of_every_unmerged_path(tmp_path, capsys):
+    """0.1.1: status --json names each conflict's kind from the staged contents, so binary, add/add,
+    modify/delete and symlink conflicts are known from the first command (the unmerged list is unchanged)."""
+    from conftest import Sandbox
+    sb = Sandbox(tmp_path / "r", capsys)
+    sb.root.mkdir()
+    sb.git("init", "-q", "-b", "main")
+    sb.write("text.txt", ["1", "2", "3"])
+    sb.write("data.txt", b"\0\1base")              # binary content behind a .txt name
+    sb.write("gone.txt", ["x", "y"])
+    (sb.root / "link").symlink_to("text.txt")
+    sb.commit("base")
+    sb.git("checkout", "-q", "-b", "feature")
+    sb.write("text.txt", ["1", "2 theirs", "3"])
+    sb.write("data.txt", b"\0\1theirs")
+    sb.write("new.txt", ["theirs"])
+    (sb.root / "gone.txt").unlink()
+    (sb.root / "link").unlink()
+    (sb.root / "link").symlink_to("gone.txt")
+    sb.commit("theirs")
+    sb.git("checkout", "-q", "main")
+    sb.write("text.txt", ["1", "2 ours", "3"])
+    sb.write("data.txt", b"\0\1ours")
+    sb.write("new.txt", ["ours"])
+    sb.write("gone.txt", ["x", "y changed"])
+    (sb.root / "link").unlink()
+    (sb.root / "link").symlink_to("new.txt")
+    sb.commit("ours")
+    sb.git("merge", "--no-edit", "feature", check=False)
+    code, out, _ = sb.run("--json", "status")
+    st = json.loads(out)
+    assert code == 0
+    assert st["unmerged"] == ["data.txt", "gone.txt", "link", "new.txt", "text.txt"]
+    assert st["unmerged_kinds"] == {"data.txt": "binary", "gone.txt": "modify_delete", "link": "symlink",
+                                    "new.txt": "add_add", "text.txt": "text"}

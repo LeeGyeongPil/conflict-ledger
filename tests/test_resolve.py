@@ -9,7 +9,7 @@ import subprocess
 import pytest
 
 import conflict_ledger as cl
-from conftest import BASE, make_repo
+from conftest import BASE, make_repo, scenario
 
 
 def test_resolve_applies_trivial_hunks_and_keeps_real_conflict(conflict):
@@ -19,8 +19,9 @@ def test_resolve_applies_trivial_hunks_and_keeps_real_conflict(conflict):
     assert "applied 3 hunks (H2, H3, H4); 1 remaining (H1)" in out
     assert "remaining_true_conflicts: 1" in out
     text = (conflict.root / "f.txt").read_text().splitlines()
-    assert text == ["line 1", "<<<<<<< ours", "line 2 OURS", "||||||| base", "line 2", "=======",
-                    "line 2 THEIRS", ">>>>>>> theirs", "line 3", "line 4", "line 6", "line 7 ", "line 8", "line 9",
+    # Q-15: inside a repository the markers keep git's own labels (HEAD, the merged branch)
+    assert text == ["line 1", "<<<<<<< HEAD", "line 2 OURS", "||||||| base", "line 2", "=======",
+                    "line 2 THEIRS", ">>>>>>> feature", "line 3", "line 4", "line 6", "line 7 ", "line 8", "line 9",
                     "line 10", "added by theirs", "line 11", "line 12"]
     assert conflict.stages() == before            # the index is untouched
 
@@ -37,7 +38,7 @@ def test_completed_result_passes_verify(conflict):
     conflict.run("resolve-trivial", "f.txt")
     path = conflict.root / "f.txt"
     lines = path.read_text().splitlines()
-    start, end = lines.index("<<<<<<< ours"), lines.index(">>>>>>> theirs")
+    start, end = lines.index("<<<<<<< HEAD"), lines.index(">>>>>>> feature")
     lines[start:end + 1] = ["line 2 OURS + THEIRS"]
     path.write_text("".join(x + "\n" for x in lines))
     code, out, _ = conflict.run("--json", "verify", "f.txt")
@@ -151,9 +152,9 @@ def test_untouched_conflict_is_resolved_in_every_conflict_style(tmp_path, capsys
     assert (sb.root / "f.txt").read_text().count("<<<<<<<") == 2
     code, out, err = sb.run("resolve-trivial", "f.txt")
     assert code == 0, err
-    assert "applied 1 hunks (H3); 2 remaining (H1, H2)" in out
+    assert "applied 1 hunk (H3); 2 remaining (H1, H2)" in out           # Q-15: singular
     text = (sb.root / "f.txt").read_text().splitlines()
-    assert text.count("<<<<<<< ours") == 2 and text[-1] == "main-add"
+    assert text.count("<<<<<<< HEAD") == 2 and text.count(">>>>>>> feature") == 2 and text[-1] == "main-add"
     assert sb.stages() == before
 
 
@@ -199,11 +200,11 @@ def test_resolve_refuses_a_partly_resolved_file(tmp_path, capsys):
     code, out, _ = sb.run("resolve-trivial", "f.txt", "--out", str(tmp_path / "machine.txt"))
     assert code == 0 and f"written: {tmp_path / 'machine.txt'}" in out
     assert path.read_bytes() == before_bytes
-    assert (tmp_path / "machine.txt").read_text().count("<<<<<<< ours") == 2
+    assert (tmp_path / "machine.txt").read_text().count("<<<<<<< HEAD") == 2
     # --force is the explicit way to discard the hand edits
     code, _, _ = sb.run("resolve-trivial", "f.txt", "--force")
     rewritten = path.read_text()
-    assert code == 0 and "user-note" not in rewritten and rewritten.count("<<<<<<< ours") == 2
+    assert code == 0 and "user-note" not in rewritten and rewritten.count("<<<<<<< HEAD") == 2
 
 
 @pytest.mark.parametrize("edit", ["extra_line", "one_block_resolved", "outside_line_changed", "inside_block_changed",
@@ -250,6 +251,36 @@ def test_refusal_writes_no_file_at_all(tmp_path, capsys):
     assert code == 3 and "--out takes exactly one PATH" in err and not (tmp_path / "x.txt").exists()
 
 
+def test_diff3_style_base_label_is_reused(tmp_path, capsys):
+    """Q-15: with merge.conflictStyle=diff3 git also labels the base part; the rewrite keeps all three labels."""
+    sb = two_block_conflict(tmp_path, capsys, "diff3")
+    git_lines = (sb.root / "f.txt").read_text().splitlines()
+    git_base = next(x for x in git_lines if x.startswith("|||||||"))
+    assert git_base != "||||||| base"                    # git's own base label (not our default)
+    assert sb.run("resolve-trivial", "f.txt")[0] == 0
+    text = (sb.root / "f.txt").read_text().splitlines()
+    assert text.count("<<<<<<< HEAD") == 2 and text.count(git_base) == 2 and text.count(">>>>>>> feature") == 2
+
+
+def test_marker_labels_fall_back_when_git_wrote_none():
+    assert cl.marker_labels(None) == {"ours": "ours", "base": "base", "theirs": "theirs"}
+    assert cl.marker_labels(b"no markers\n") == {"ours": "ours", "base": "base", "theirs": "theirs"}
+    assert cl.marker_labels(b"\0binary") == {"ours": "ours", "base": "base", "theirs": "theirs"}
+    got = cl.marker_labels(b"x\n<<<<<<<<< HEAD\na\n=========\nb\n>>>>>>>>> topic/one\n<<<<<<< other\n")
+    assert got == {"ours": "HEAD", "base": "base", "theirs": "topic/one"}      # first block only, longer markers too
+
+
+def test_file_mode_markers_and_plural_unchanged(tmp_path, run_cli):
+    """File mode keeps the 0.1.0 marker names; the English message says 'hunk' for exactly one."""
+    base, ours, theirs = ["a", "b", "c"], ["a", "B1", "c", "o"], ["a", "B2", "c"]
+    for name, lines in (("b", base), ("o", ours), ("t", theirs)):
+        (tmp_path / name).write_text("".join(x + "\n" for x in lines))
+    code, out, _ = run_cli("resolve-trivial", "--base", "b", "--ours", "o", "--theirs", "t", "--out", "m.txt")
+    assert code == 0 and "m.txt: applied 1 hunk (H2); 1 remaining (H1)" in out      # F-2: named after --out
+    assert (tmp_path / "m.txt").read_text().splitlines() == ["a", "<<<<<<< ours", "B1", "||||||| base", "b", "=======",
+                                                             "B2", ">>>>>>> theirs", "c", "o"]
+
+
 def test_file_mode_out_file_with_hand_edits_is_kept(tmp_path, run_cli, conflict):
     """The same rule protects an existing --out file: a re-run must not wipe the block you already merged."""
     for name, data in (("b", BASE), ("o", conflict.ours), ("t", conflict.theirs)):
@@ -264,3 +295,21 @@ def test_file_mode_out_file_with_hand_edits_is_kept(tmp_path, run_cli, conflict)
     assert code == 3 and "no conflict markers left" in err and merged.read_bytes() == before
     code, _, _ = run_cli(*args, "--force")
     assert code == 0 and "<<<<<<< ours" in merged.read_text()
+
+
+def test_file_mode_report_names_the_out_file_without_name(tmp_path, run_cli):
+    """QA fresh F-2: without --name the report names the --out file, not the ours input; --name still wins and the
+    receipt does not depend on the name."""
+    ours, theirs, _good = scenario()
+    for name, lines in (("base.txt", BASE), ("ours.txt", ours), ("theirs.txt", theirs)):
+        (tmp_path / name).write_text("".join(x + "\n" for x in lines), encoding="utf-8")
+    common = ("resolve-trivial", "--base", "base.txt", "--ours", "ours.txt", "--theirs", "theirs.txt")
+    code, out, _ = run_cli("--lang", "en", *common, "--out", "merged.txt", "--findings-file", "a.txt")
+    assert code == 0 and out.startswith("merged.txt: applied ") and "ours.txt" not in out
+    code, out, _ = run_cli("--lang", "en", *common, "--out", "merged.txt", "--force", "--name", "app.txt",
+                           "--findings-file", "b.txt")
+    assert code == 0 and out.startswith("app.txt: applied ")
+    summary = [(tmp_path / f).read_text(encoding="utf-8").splitlines()[-1] for f in ("a.txt", "b.txt")]
+    assert summary[0] == summary[1] and "receipt=cl1-" in summary[0]
+    code, out, _ = run_cli("--lang", "en", *common)                           # no --out: the ours file names it
+    assert code == 0 and out.startswith("ours.txt: applied ")
