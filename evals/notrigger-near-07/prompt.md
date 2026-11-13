@@ -3,4 +3,4 @@ name: notrigger-near-07
 max_turns: 6
 ---
 
-Undo my last merge - I want to go back to before it.
+How do I undo my last merge and go back to before it? Give me the commands, don't run them.

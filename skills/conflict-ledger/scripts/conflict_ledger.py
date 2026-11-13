@@ -21,7 +21,7 @@ import tempfile
 from collections import Counter
 from pathlib import Path
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 EXIT_OK, EXIT_ERROR, EXIT_WARN, EXIT_INPUT = 0, 1, 2, 3
 SIDES = ("ours", "theirs")
@@ -55,11 +55,12 @@ MESSAGES: dict[str, dict[str, str]] = {
         "opt_version": "show the version and exit",
         "opt_help": "show this help message and exit",
         "opt_paths": "files to check (default: every unmerged file)",
+        "opt_paths_verify": "files to check (default: unmerged files, files with a scan snapshot and, during a merge, rebase, cherry-pick or revert, every file both sides changed, so staged resolutions are found too)",
         "opt_base": "file mode: common ancestor file",
         "opt_ours": "file mode: our version of the file",
         "opt_theirs": "file mode: their version of the file",
         "opt_result": "file mode: the resolved file to audit",
-        "opt_name": "file mode: display name for the file",
+        "opt_name": "file mode: display name for the file (default: the --result file for verify, the --out file for resolve-trivial, else the --ours file)",
         "opt_operation": "file mode: which operation decides the side labels",
         "opt_out": "write the partly resolved file here (file mode default: print it; in a repository: instead of the working file, one PATH only)",
         "opt_dry_run": "report what would be applied without writing files",
@@ -70,8 +71,10 @@ MESSAGES: dict[str, dict[str, str]] = {
         "opt_findings": "also write short machine-friendly result lines to this file, ending with a summary line and the audit receipt",
         "err.git_missing": "git was not found on PATH; install git 2.35 or newer",
         "err.not_a_repo": "not a git repository: {path}; run inside a repository, pass --repo PATH, or use --base/--ours/--theirs/--result",
+        "err.skill_folder": "this is the conflict-ledger skill's own folder, not the repository to check: {path}; run the script by its full path from the repository, or pass --repo PATH",
         "err.no_conflict": "no conflict in progress and no snapshot for {path}; run scan while the conflict is still open, or pass --base/--ours/--theirs",
         "err.no_unmerged": "no unmerged files in {path}; pass file paths or use file mode",
+        "err.nothing_to_audit": "{op} in progress, but nothing to audit for {path}: no unmerged file, no snapshot and no file changed on both sides; pass PATH to audit a file, or --base/--ours/--theirs/--result",
         "err.binary": "binary file, line audit skipped: {path}; compare it by hand or pass text files",
         "err.not_two_parent": "commit {sha} is not a two-parent merge",
         "err.bad_commit": "cannot resolve commit {sha}",
@@ -82,6 +85,7 @@ MESSAGES: dict[str, dict[str, str]] = {
         "err.outside_repo": "path is outside the repository: {path}",
         "err.not_text": "only text files can be resolved ({kind}): {path}",
         "err.usage": "{prog}: error: {message}",
+        "err.os_error": "cannot read or write {path}: {reason}",
         "label.ours": "ours",
         "label.theirs": "theirs",
         "label.both": "both sides",
@@ -94,6 +98,8 @@ MESSAGES: dict[str, dict[str, str]] = {
         "label.patch": "patch (being applied)",
         "label.parent1": "first parent",
         "label.parent2": "second parent",
+        "side.file": "file",
+        "side.result": "result",
         "st.operation": "operation: {op}",
         "st.stage2": "stage 2 (ours) = {label}",
         "st.stage3": "stage 3 (theirs) = {label}",
@@ -102,8 +108,12 @@ MESSAGES: dict[str, dict[str, str]] = {
         "st.none_unmerged": "no unmerged files",
         "st.snapshots": "snapshots saved for: {paths}",
         "st.no_snapshots": "no snapshots saved",
+        "st.to_audit": "no unmerged files left; verify without PATH audits the files both sides changed: {paths}",
+        "st.deleted": "gone from the working tree although no side deleted them; verify without PATH audits them as lost changes: {paths}",
         "scan.file": "{path}: {kind}, {count} hunks",
+        "scan.file_one": "{path}: {kind}, {count} hunk",
         "scan.cross": "git merge-file reports {count} conflicts for comparison",
+        "scan.cross_one": "git merge-file reports {count} conflict for comparison",
         "scan.auto": "auto",
         "scan.deleted": "(deleted)",
         "res.edited": "{path}: {reason}; refusing to overwrite it so hand edits are not lost (nothing was written). Finish it by hand and run verify, write the machine resolution elsewhere with --out FILE, or pass --force to overwrite and discard the edits",
@@ -129,11 +139,13 @@ MESSAGES: dict[str, dict[str, str]] = {
         "span.after": "base after L{n}",
         "span.start": "base at file start",
         "res.file": "{path}: applied {applied_n} hunks ({applied}); {remaining_n} remaining ({remaining})",
+        "res.file_one": "{path}: applied {applied_n} hunk ({applied}); {remaining_n} remaining ({remaining})",
         "res.dry": "dry run: nothing was written",
         "res.written": "written: {path} (the index was not changed)",
         "res.remaining": "remaining_true_conflicts: {count}",
         "ver.header": "verify {path} (source: {source})",
         "ver.pass": "PASS: no lost changes found ({info} hunks need judgement)",
+        "ver.pass_one": "PASS: no lost changes found ({info} hunk needs judgement)",
         "ver.warn": "WARNINGS: {count} items need a human look",
         "ver.fail": "FAIL: {count} error(s), {warn} warning(s)",
         "ver.operation": "operation: {op}; ours = {ours}; theirs = {theirs}",
@@ -147,7 +159,8 @@ MESSAGES: dict[str, dict[str, str]] = {
         "kind.multiple_merge_bases": "{count} merge bases found; the first one was used",
         "kind.judgement_hunk": "hunk {hunk} needs judgement; closest line to {side_label}: {similarity}",
         "kind.file_skipped": "{reason} file: line audit skipped",
-        "kind.large_file": "large file ({lines} lines); the audit may be slow",
+        "kind.large_file": "large file (largest version: {lines} lines); the audit may be slow",
+        "kind.rename_followed": "renamed from {old} by {side_label}; audited against the base version of {old}",
         "demo.start": "demo: building a throwaway repository in {path} (real git, real conflict)",
         "demo.merge": "demo: git merge feature -> conflict in f.txt",
         "demo.scan": "demo: scan found {count} hunks",
@@ -175,11 +188,12 @@ MESSAGES: dict[str, dict[str, str]] = {
         "opt_version": "버전을 보여 주고 끝낸다",
         "opt_help": "도움말을 보여 주고 끝낸다",
         "opt_paths": "검사할 파일 (기본: 병합되지 않은 모든 파일)",
+        "opt_paths_verify": "검사할 파일 (기본: 병합되지 않은 파일, scan 스냅샷이 있는 파일, 그리고 병합·리베이스·체리픽·되돌리기 중이면 양쪽이 모두 바꾼 파일. 그래서 git add 한 해결도 찾음)",
         "opt_base": "파일 모드: 공통 조상 파일",
         "opt_ours": "파일 모드: 우리 쪽 파일",
         "opt_theirs": "파일 모드: 상대 쪽 파일",
         "opt_result": "파일 모드: 감사할 해결 결과 파일",
-        "opt_name": "파일 모드: 파일에 붙일 표시 이름",
+        "opt_name": "파일 모드: 파일에 붙일 표시 이름 (기본값: verify 는 --result 파일, resolve-trivial 은 --out 파일, 그 밖에는 --ours 파일)",
         "opt_operation": "파일 모드: 쪽 라벨을 정하는 작업 종류",
         "opt_out": "일부만 해결한 파일을 쓸 위치 (파일 모드 기본: 화면에 출력, 저장소 안에서는 작업 파일 대신 여기에 씀, PATH 하나만)",
         "opt_dry_run": "파일을 쓰지 않고 적용될 내용만 보고한다",
@@ -190,8 +204,10 @@ MESSAGES: dict[str, dict[str, str]] = {
         "opt_findings": "짧은 기계용 결과 줄을 이 파일에도 쓴다(마지막 줄은 합계와 감사 영수증)",
         "err.git_missing": "PATH 에서 git 을 찾을 수 없음, git 2.35 이상을 설치할 것",
         "err.not_a_repo": "git 저장소가 아님: {path}, 저장소 안에서 실행하거나 --repo PATH 또는 --base/--ours/--theirs/--result 를 줄 것",
+        "err.skill_folder": "conflict-ledger 스킬 자체 폴더이지 검사할 저장소가 아님: {path}, 저장소에서 스크립트를 전체 경로로 실행하거나 --repo PATH 를 줄 것",
         "err.no_conflict": "진행 중인 충돌도 스냅샷도 없음: {path}, 충돌이 열려 있을 때 scan 을 먼저 돌리거나 --base/--ours/--theirs 를 줄 것",
         "err.no_unmerged": "병합되지 않은 파일이 없음: {path}, 파일 경로를 주거나 파일 모드를 쓸 것",
+        "err.nothing_to_audit": "{op} 작업이 진행 중이지만 감사할 대상을 찾지 못함: {path}, 병합되지 않은 파일·스냅샷·양쪽이 모두 바꾼 파일이 없음, 감사할 PATH 나 --base/--ours/--theirs/--result 를 줄 것",
         "err.binary": "바이너리 파일, 줄 감사 건너뜀: {path}, 텍스트 파일을 주거나 직접 비교할 것",
         "err.not_two_parent": "커밋 {sha} 은 부모가 2개인 병합 커밋이 아님",
         "err.bad_commit": "커밋을 찾을 수 없음: {sha}",
@@ -202,6 +218,7 @@ MESSAGES: dict[str, dict[str, str]] = {
         "err.outside_repo": "저장소 밖의 경로: {path}",
         "err.not_text": "텍스트 파일만 해결할 수 있음 ({kind}): {path}",
         "err.usage": "{prog}: 오류: {message}",
+        "err.os_error": "읽거나 쓸 수 없음: {path}: {reason}",
         "label.ours": "ours",
         "label.theirs": "theirs",
         "label.both": "양쪽",
@@ -214,6 +231,8 @@ MESSAGES: dict[str, dict[str, str]] = {
         "label.patch": "패치 (적용 중)",
         "label.parent1": "첫째 부모",
         "label.parent2": "둘째 부모",
+        "side.file": "파일",
+        "side.result": "결과",
         "st.operation": "작업: {op}",
         "st.stage2": "스테이지 2 (ours) = {label}",
         "st.stage3": "스테이지 3 (theirs) = {label}",
@@ -222,8 +241,12 @@ MESSAGES: dict[str, dict[str, str]] = {
         "st.none_unmerged": "병합되지 않은 파일 없음",
         "st.snapshots": "스냅샷 저장됨: {paths}",
         "st.no_snapshots": "저장된 스냅샷 없음",
+        "st.to_audit": "병합되지 않은 파일이 남지 않음, PATH 없는 verify 가 양쪽이 모두 바꾼 파일을 감사함: {paths}",
+        "st.deleted": "어느 쪽도 지우지 않았는데 작업 폴더에서 사라진 파일, PATH 없는 verify 가 잃은 변경으로 감사함: {paths}",
         "scan.file": "{path}: {kind}, 덩어리 {count}개",
+        "scan.file_one": "{path}: {kind}, 덩어리 {count}개",
         "scan.cross": "비교용 git merge-file 충돌 수: {count}",
+        "scan.cross_one": "비교용 git merge-file 충돌 수: {count}",
         "scan.auto": "자동",
         "scan.deleted": "(삭제됨)",
         "res.edited": "{path}: {reason}. 손으로 고친 내용을 잃지 않도록 덮어쓰지 않음(아무것도 쓰지 않음). 손으로 마저 고친 뒤 verify 로 검사하거나, --out FILE 로 기계 해결본을 다른 곳에 쓰거나, 고친 내용을 버리고 덮어쓰려면 --force 를 줄 것",
@@ -249,11 +272,13 @@ MESSAGES: dict[str, dict[str, str]] = {
         "span.after": "base {n}행 뒤",
         "span.start": "base 파일 맨 앞",
         "res.file": "{path}: 덩어리 {applied_n}개를 적용했고 {remaining_n}개가 남았습니다. 적용: {applied} / 남음: {remaining}",
+        "res.file_one": "{path}: 덩어리 {applied_n}개를 적용했고 {remaining_n}개가 남았습니다. 적용: {applied} / 남음: {remaining}",
         "res.dry": "시험 실행: 아무것도 쓰지 않음",
         "res.written": "저장함: {path} (인덱스는 바꾸지 않음)",
         "res.remaining": "remaining_true_conflicts: {count}",
         "ver.header": "verify {path} (입력원: {source})",
         "ver.pass": "통과: 유실된 변경 없음 (판단이 필요한 덩어리 {info}개)",
+        "ver.pass_one": "통과: 유실된 변경 없음 (판단이 필요한 덩어리 {info}개)",
         "ver.warn": "경고: 사람이 확인할 항목 {count}개",
         "ver.fail": "실패: 오류 {count}개, 경고 {warn}개",
         "ver.operation": "작업: {op}, ours = {ours}, theirs = {theirs}",
@@ -267,7 +292,8 @@ MESSAGES: dict[str, dict[str, str]] = {
         "kind.multiple_merge_bases": "공통 조상이 {count}개, 첫 번째를 사용함",
         "kind.judgement_hunk": "덩어리 {hunk}: 판단 필요, 가장 비슷한 줄 ({side_label}): {similarity}",
         "kind.file_skipped": "{reason} 파일, 줄 감사 건너뜀",
-        "kind.large_file": "큰 파일 ({lines}줄), 감사가 느릴 수 있음",
+        "kind.large_file": "큰 파일 (가장 긴 버전 {lines}줄), 감사가 느릴 수 있음",
+        "kind.rename_followed": "{side_label} 쪽이 {old} 에서 이름을 바꿈, {old} 의 base 버전과 비교해 감사함",
         "demo.start": "데모: {path} 에 임시 저장소를 만든다 (진짜 git, 진짜 충돌)",
         "demo.merge": "데모: git merge feature -> f.txt 충돌",
         "demo.scan": "데모: scan 이 덩어리 {count}개를 찾음",
@@ -292,6 +318,20 @@ class InputError(Exception):
         self.key = key
         self.params = params
         super().__init__(MESSAGES["en"][key].format(**params))
+
+    @property
+    def kind(self) -> str:
+        """Language-independent problem name for the JSON / findings ledger: the message key without its prefix
+        (err.binary -> binary). A non-text file refused by resolve-trivial is named by its file kind (binary, ...)."""
+        if self.key == "err.not_text":
+            return str(self.params["kind"])
+        return self.key.split(".", 1)[1]
+
+    @property
+    def path(self) -> str | None:
+        """The path the problem is about, exactly as the user gave it (None when the problem is not about a path)."""
+        value = self.params.get("path")
+        return None if value is None else str(value)
 
 
 def normalize_lang(value: str | None) -> str | None:
@@ -425,8 +465,15 @@ def hunk_json(h: dict) -> dict:
             "auto_resolvable": h["class"] in AUTO_CLASSES}
 
 
-def render_resolution(base: list[str], hunks: list[dict], whitespace: str = "ours") -> tuple[list[str], list[str], list[str]]:
-    """Resolve provably trivial hunks; leave the rest as diff3 conflict blocks."""
+DEFAULT_MARKER_LABELS = {"ours": "ours", "base": "base", "theirs": "theirs"}
+
+
+def render_resolution(base: list[str], hunks: list[dict], whitespace: str = "ours",
+                      labels: dict[str, str] | None = None) -> tuple[list[str], list[str], list[str]]:
+    """Resolve provably trivial hunks; leave the rest as diff3 conflict blocks.
+
+    labels names the three marker lines (default ours / base / theirs; in a repository the labels git wrote)."""
+    names = labels or DEFAULT_MARKER_LABELS
     out: list[str] = []
     applied: list[str] = []
     remaining: list[str] = []
@@ -439,13 +486,13 @@ def render_resolution(base: list[str], hunks: list[dict], whitespace: str = "our
             out.extend(h[pick])
             applied.append(h["id"])
         else:
-            out.append("<<<<<<< ours")
+            out.append(f"<<<<<<< {names['ours']}")
             out.extend(h["ours"])
-            out.append("||||||| base")
+            out.append(f"||||||| {names['base']}")
             out.extend(base[h["lo"]:h["hi"]])
             out.append("=======")
             out.extend(h["theirs"])
-            out.append(">>>>>>> theirs")
+            out.append(f">>>>>>> {names['theirs']}")
             remaining.append(h["id"])
         pos = h["hi"]
     out.extend(base[pos:])
@@ -501,11 +548,14 @@ def best_ratio(line: str, candidates: list[tuple[int, str]]) -> tuple[float, int
     return best
 
 
-def audit(base: list[str], ours: list[str], theirs: list[str], result: list[str]) -> dict[str, list[dict]]:
+def audit(base: list[str], ours: list[str], theirs: list[str], result: list[str],
+          result_deleted: bool = False) -> dict[str, list[dict]]:
     """Check that the result kept every change both sides made to the base.
 
     Errors are only reported where the expected outcome is provable. Hunks that need judgement
     produce info items, and a side whose change left no trace becomes a warning.
+    result_deleted: the resolution deleted the file although no side deleted it. Then nothing of
+    any hunk survived, so a judged hunk's added lines are provably lost too (errors, not notes).
     """
     errors: list[dict] = []
     warnings: list[dict] = []
@@ -538,6 +588,16 @@ def audit(base: list[str], ours: list[str], theirs: list[str], result: list[str]
         covered.update(range(lo, hi))
         start, end = span(lo, hi)
         window = result[start:end]
+        if cls in JUDGE_CLASSES and result_deleted:
+            # 파일이 통째로 지워졌다: 판단할 거리가 없다. 각 쪽이 이 덩어리에 더한 줄이 전부 사라졌다.
+            for side in SIDES:
+                mine = [r for r in h["regions"] if r[0] == side]
+                for line in [x for x in h[side] if x not in base[lo:hi]]:
+                    # 이 쪽 파일에서의 줄 번호: 덩어리 시작(lo)이 그 쪽 파일의 몇째 줄인지 + 덩어리 안 위치
+                    side_line = mine[0][3] - (mine[0][1] - lo) + h[side].index(line) + 1 if len(mine) == 1 else None
+                    errors.append({"kind": "addition_dropped", "side": side, "base_line": lo + 1,
+                                   "side_line": side_line, "text": line})
+            continue
         if cls in JUDGE_CLASSES:
             sims: dict[str, float | None] = {}
             for side in SIDES:
@@ -675,14 +735,28 @@ class Repo:
         if p.is_absolute():
             full = p
         else:       # relative to the current folder, or to the repository root when only that exists
-            full = Path.cwd() / p if (Path.cwd() / p).exists() or not (self.top / p).exists() else self.top / p
+            here, root = Path.cwd() / p, self.top / p
+            if here.exists():
+                full = here
+            elif root.exists():
+                full = root
+            else:   # 어디에도 없는 경로(지운 파일): 현재 폴더가 저장소 밖이면 저장소 루트 기준으로 본다
+                inside = Path.cwd().resolve().is_relative_to(self.top.resolve())
+                full = here if inside else root
         try:
             return full.resolve().relative_to(self.top.resolve()).as_posix()
         except ValueError as exc:
             raise InputError("err.outside_repo", path=path) from exc
 
 
+# 이 스크립트가 든 스킬 폴더(scripts/ 의 부모). 에이전트가 스킬 폴더로 cd 해서 돌리면, 플러그인이 git 클론일 때
+# 스킬 자체 저장소를 "충돌 없음"으로 읽고 엉뚱한 저장소에서 작업을 이어 가므로 입력 문제로 바로 멈춘다.
+SKILL_FOLDER = Path(__file__).resolve().parent.parent
+
+
 def open_repo(path: str | Path) -> Repo:
+    if Path(path).resolve().is_relative_to(SKILL_FOLDER):
+        raise InputError("err.skill_folder", path=str(path))
     r = run_git(path, "rev-parse", "--show-toplevel")
     if r.returncode != 0:
         raise InputError("err.not_a_repo", path=str(path))
@@ -778,26 +852,77 @@ def prune_snapshots(repo: Repo) -> None:
             shutil.rmtree(d, ignore_errors=True)
 
 
-def head_sources(repo: Repo, op: str, rel: str) -> dict | None:
-    """Rebuild base, ours and theirs from commits when the index stages are gone."""
-    notes: list[dict] = []
-    head_file = {"merge": "MERGE_HEAD", "rebase": "REBASE_HEAD", "cherry-pick": "CHERRY_PICK_HEAD", "revert": "REVERT_HEAD"}.get(op)
+HEAD_FILES = {"merge": "MERGE_HEAD", "rebase": "REBASE_HEAD", "cherry-pick": "CHERRY_PICK_HEAD", "revert": "REVERT_HEAD"}
+
+
+def head_revs(repo: Repo, op: str) -> tuple[str, str, list[dict]] | None:
+    """The (base, theirs) revisions of the operation in progress, read from its head file; ours is always HEAD.
+
+    merge: merge base of HEAD and MERGE_HEAD -> MERGE_HEAD; rebase / cherry-pick: <head>^ -> <head>;
+    revert: <head> -> <head>^. None when no such head file exists (no operation, or git am)."""
+    head_file = HEAD_FILES.get(op)
     if head_file is None or not repo.git_path(head_file).exists():
         return None
-    other = head_file
+    notes: list[dict] = []
     if op == "merge":
         bases = (repo.out("merge-base", "--all", "HEAD", "MERGE_HEAD") or "").split()
         if not bases:
             return None
         if len(bases) > 1:
             notes.append({"kind": "multiple_merge_bases", "side": None, "count": len(bases)})
-        base_rev, theirs_rev = bases[0], other
-    elif op == "revert":
-        base_rev, theirs_rev = other, f"{other}^"
-    else:
-        base_rev, theirs_rev = f"{other}^", other
+        return bases[0], head_file, notes
+    if op == "revert":
+        return head_file, f"{head_file}^", notes
+    return f"{head_file}^", head_file, notes
+
+
+def head_sources(repo: Repo, op: str, rel: str) -> dict | None:
+    """Rebuild base, ours and theirs from commits when the index stages are gone."""
+    revs = head_revs(repo, op)
+    if revs is None:
+        return None
+    base_rev, theirs_rev, notes = revs
     return {"base": repo.blob(f"{base_rev}:{rel}"), "ours": repo.blob(f"HEAD:{rel}"),
             "theirs": repo.blob(f"{theirs_rev}:{rel}"), "op": op, "notes": notes}
+
+
+def changed_paths(repo: Repo, old: str, new: str) -> set[str]:
+    """Paths that differ between two commits (renames count as delete + add, like the audit itself)."""
+    r = repo.git("diff", "--name-only", "--no-renames", "-z", old, new)
+    return {x.decode("utf-8", "replace") for x in r.stdout.split(b"\0") if x} if r.returncode == 0 else set()
+
+
+def both_changed_paths(repo: Repo, op: str) -> list[str]:
+    """Paths that both sides of the operation in progress changed against the base: every file that could have
+    conflicted. Once a conflict is resolved and staged its index stages are gone, so this is how a call without
+    PATH still finds it before the commit. Empty when no operation head exists."""
+    revs = head_revs(repo, op)
+    if revs is None:
+        return []
+    base_rev, theirs_rev, _notes = revs
+    # 우리 쪽(HEAD)과 상대 쪽이 둘 다 base 에서 바꾼 경로만: 충돌이 날 수 있었던 파일
+    return sorted(changed_paths(repo, base_rev, "HEAD") & changed_paths(repo, base_rev, theirs_rev))
+
+
+def deleted_change_paths(repo: Repo, op: str) -> list[str]:
+    """Paths that at least one side of the operation in progress changed, that are gone from the working tree,
+    although no side deleted them: the resolution deleted a change (for example with git rm). A path that one
+    side deleted is a real modify/delete and is not listed. Empty when no operation head exists."""
+    revs = head_revs(repo, op)
+    if revs is None:
+        return []
+    base_rev, theirs_rev, _notes = revs
+    out = []
+    for rel in sorted(changed_paths(repo, base_rev, "HEAD") | changed_paths(repo, base_rev, theirs_rev)):
+        full = repo.top / rel
+        if full.exists() or full.is_symlink():
+            continue
+        # 작업 폴더에 없는 경로만 세 버전을 꺼내 본다(대부분의 경로는 위에서 바로 넘어간다)
+        base, ours, theirs = (repo.blob(f"{rev}:{rel}") for rev in (base_rev, "HEAD", theirs_rev))
+        if base is not None and (ours is None or theirs is None):
+            continue                    # 한쪽이 지웠다: 지움을 받아들인 것이지 변경을 잃은 것이 아니다
+        out.append(rel)
+    return out
 
 
 def acquire(repo: Repo, rel: str, prefer_snapshot: bool) -> dict:
@@ -827,6 +952,8 @@ def acquire(repo: Repo, rel: str, prefer_snapshot: bool) -> dict:
     found = head_sources(repo, op, rel)
     if found:
         return {"path": rel, "source": "heads", **found}
+    if op != "none":            # 작업은 진행 중인데 세 버전을 다시 만들 곳이 없다(git am 등): "충돌 없음"이라고 하지 않는다
+        raise InputError("err.nothing_to_audit", op=op, path=rel)
     raise InputError("err.no_conflict", path=rel)
 
 
@@ -849,13 +976,66 @@ def commit_items(repo: Repo, sha: str, paths: list[str]) -> list[dict]:
             out = repo.git("diff", "--name-only", "--no-renames", "-z", bases[0], parent).stdout
             names.update(x.decode("utf-8", "replace") for x in out.split(b"\0") if x)
         paths = sorted(names)
+    # 이름 바꾸기 짝: 한쪽(또는 양쪽이 같은 새 이름으로)이 파일 이름을 바꾸고 다른 쪽은 옛 이름에서 고친 경우,
+    # git 은 이름 바꾸기 감지로 깨끗이 합친다. 새 경로를 감사할 때 base 와 바꾸지 않은 쪽을 옛 경로에서 읽어야
+    # 그 쪽 수정이 "새 파일 통째 추가" 로 잘못 읽히지 않는다. 짝을 확실히 맞출 수 있을 때만 쓴다.
+    moved = {"ours": renamed_paths(repo, bases[0], p1), "theirs": renamed_paths(repo, bases[0], p2)}
+    pairs = rename_pairs(repo, moved, p1, p2, commit)
+    followed_old = {old for old, _side in pairs.values()}
     items = []
     for rel in paths:
-        items.append({"path": rel, "base": repo.blob(f"{bases[0]}:{rel}"), "ours": repo.blob(f"{p1}:{rel}"),
-                      "theirs": repo.blob(f"{p2}:{rel}"), "result": repo.blob(f"{commit}:{rel}"), "op": "commit",
-                      "source": "commit", "notes": list(notes), "explicit": explicit,
+        if rel in followed_old and not explicit:
+            continue                    # 옛 경로: 새 경로 감사에 합쳐졌다(결과에 옛 경로가 없을 때만 짝이 된다)
+        old, by = pairs.get(rel, (rel, None))
+        ours_path = rel if by in ("ours", "both") else old
+        theirs_path = rel if by in ("theirs", "both") else old
+        # 짝을 맞췄다는 사실은 경고가 아니라 정보(INFO)로 알린다: 어느 옛 경로의 base 와 비교했는지 보이게
+        followed = [{"kind": "rename_followed", "side": by, "old": old}] if by else []
+        items.append({"path": rel, "base": repo.blob(f"{bases[0]}:{old}"), "ours": repo.blob(f"{p1}:{ours_path}"),
+                      "theirs": repo.blob(f"{p2}:{theirs_path}"), "result": repo.blob(f"{commit}:{rel}"), "op": "commit",
+                      "source": "commit", "notes": list(notes), "info_notes": followed, "explicit": explicit,
                       "labels": {"ours": "parent1", "theirs": "parent2"}})
     return items
+
+
+def renamed_paths(repo: Repo, old_rev: str, new_rev: str) -> dict[str, str]:
+    """new path -> old path for every rename git detects between two commits (git's default similarity)."""
+    r = repo.git("diff", "-M", "--name-status", "--diff-filter=R", "-z", old_rev, new_rev)
+    fields = [x.decode("utf-8", "replace") for x in r.stdout.split(b"\0")] if r.returncode == 0 else []
+    out: dict[str, str] = {}
+    # -z 출력은 "R<유사도>\0옛 경로\0새 경로\0" 의 반복이다(맨 끝은 빈 조각)
+    for i in range(0, len(fields) - 2, 3):
+        status, old, new = fields[i], fields[i + 1], fields[i + 2]
+        if status.startswith("R"):
+            out[new] = old
+    return out
+
+
+def rename_pairs(repo: Repo, moved: dict[str, dict[str, str]], p1: str, p2: str, commit: str) -> dict[str, tuple[str, str]]:
+    """new path -> (old path, which side renamed: ours / theirs / both) for renames that can be audited as one file.
+
+    Only unambiguous cases: one side renamed old -> new and the other side still has old (not renamed, no file at new),
+    or both sides renamed old to the same new path. The result must have new and no longer have old."""
+    pairs: dict[str, tuple[str, str]] = {}
+    rev = {"ours": p1, "theirs": p2}
+    for new in sorted(set(moved["ours"]) | set(moved["theirs"])):
+        olds = {side: moved[side].get(new) for side in SIDES}
+        if olds["ours"] and olds["theirs"]:
+            if olds["ours"] != olds["theirs"]:
+                continue
+            old, by = olds["ours"], "both"
+        else:
+            by = "ours" if olds["ours"] else "theirs"
+            other = "theirs" if by == "ours" else "ours"
+            old = olds[by]
+            if old in moved[other].values():                    # 다른 쪽도 같은 파일을 다른 이름으로 바꿨다
+                continue
+            if repo.blob(f"{rev[other]}:{old}") is None or repo.blob(f"{rev[other]}:{new}") is not None:
+                continue
+        if repo.blob(f"{commit}:{new}") is None or repo.blob(f"{commit}:{old}") is not None:
+            continue
+        pairs[new] = (old, by)
+    return pairs
 
 
 # --------------------------------------------------------------------------- verification driver
@@ -864,30 +1044,52 @@ def lines_of(data: bytes | None, eol: str) -> list[str]:
     return [] if data is None else split_lines(data, eol)
 
 
+def skipped_markers(item: dict, eol: str) -> list[dict]:
+    """conflict_marker_left errors for a file whose line audit is skipped (add/add, modify/delete, binary).
+
+    Only a text result is searched. A marker pair that the base or either side already had is not counted,
+    so a file that legitimately contains marker-like lines can still be kept as it was."""
+    result = item.get("result")
+    if result is None or is_binary(result):
+        return []
+    known = [line for k in ("base", "ours", "theirs")
+             if item.get(k) is not None and not is_binary(item[k]) for line in split_lines(item[k], eol)]
+    lines = split_lines(result, eol)
+    return [{"kind": "conflict_marker_left", "side": None, "result_line": n, "text": lines[n - 1]}
+            for n in find_markers(lines, known)]
+
+
 def verify_item(item: dict, eol: str, ignore_ws: bool) -> dict:
     """Audit one file. Returns findings plus a 'skipped' reason when no line audit applies."""
     parts = [item["base"], item["ours"], item["theirs"], item.get("result")]
     present = [x for x in parts if x is not None]
+    result_deleted = item.get("result") is None
     if any(is_binary(x) for x in present):
         kind = "binary"
     elif item["base"] is not None and (item["ours"] is None or item["theirs"] is None):
-        kind = "modify_delete"
+        kind = "modify_delete"      # 한쪽이 파일을 지웠다: 진짜 수정/삭제(지움을 받아들인 결과도 여기)
+    elif result_deleted:
+        # 어느 쪽도 지우지 않은 파일을 해결이 지웠다(git rm 등): 건너뛰지 않고 빈 결과로 감사한다.
+        # 양쪽(또는 바꾼 한쪽)이 더한 줄은 addition_dropped, 둘 다 둔 줄은 base_line_lost 오류가 된다.
+        kind = "text"
     elif item["base"] is None and item["ours"] is not None and item["theirs"] is not None:
         kind = "add_add"
-    elif item.get("result") is None:
-        kind = "modify_delete"
     else:
         kind = "text"
     if kind != "text":
-        if item.get("explicit", True) and kind == "binary":
+        # 줄 감사를 건너뛰는 파일이라도 결과에 충돌 표식이 남아 있으면 항상 오류다(add/add 를 git 이 쓴 그대로 둔 경우 등).
+        # 결과가 읽을 수 있는 텍스트일 때만 찾는다. 양쪽 버전에 이미 있던 표식 모양 줄(테스트 자료 등)은 남겨도 된다.
+        markers = skipped_markers(item, eol)
+        if item.get("explicit", True) and kind == "binary" and not markers:
             named = [item["inputs"][k] for k in ("base", "ours", "theirs", "result")
                      if item.get("inputs") and item.get(k) is not None and is_binary(item[k])]
             raise InputError("err.binary", path=named[0] if named else item["path"])
-        return {"errors": [], "warnings": [], "info": [{"kind": "file_skipped", "side": None, "reason": kind}], "skipped": kind}
+        return {"errors": markers, "warnings": [], "info": [{"kind": "file_skipped", "side": None, "reason": kind}],
+                "skipped": kind}
     base, ours, theirs, result = (lines_of(item[k], eol) for k in ("base", "ours", "theirs", "result"))
     if ignore_ws:
         base, ours, theirs, result = (norm_ws(x) for x in (base, ours, theirs, result))
-    found = audit(base, ours, theirs, result)
+    found = audit(base, ours, theirs, result, result_deleted=result_deleted)
     biggest = max(len(base), len(ours), len(theirs), len(result))
     if biggest > LARGE_FILE_LINES:
         found["info"].append({"kind": "large_file", "side": None, "lines": biggest})
@@ -917,16 +1119,31 @@ def collect_verify_items(args: argparse.Namespace) -> list[dict]:
     repo = open_repo(args.repo)
     if args.commit:
         return commit_items(repo, args.commit, [repo.rel(p) for p in args.paths])
-    paths = [repo.rel(p) for p in args.paths] or sorted(set(repo.unmerged()) | set(list_snapshots(repo)))
+    explicit = bool(args.paths)
+    op = repo.operation()
+    # PATH 가 없으면: 아직 병합되지 않은 파일 + scan 스냅샷 + 진행 중 작업에서 양쪽이 바꾼 파일
+    # + 한쪽이라도 바꿨는데 어느 쪽도 지우지 않은 채 작업 폴더에서 사라진 파일.
+    # 뒤의 두 집합 덕분에 scan 없이 git add / git rm 까지 마친(아직 커밋 전) 해결도 찾아서 감사한다.
+    paths = [repo.rel(p) for p in args.paths] or sorted(
+        set(repo.unmerged()) | set(list_snapshots(repo)) | set(both_changed_paths(repo, op))
+        | set(deleted_change_paths(repo, op)))
     if not paths:
+        if op != "none":
+            raise InputError("err.nothing_to_audit", op=op, path=str(repo.top))
         raise InputError("err.no_conflict", path=str(repo.top))
     items = []
     for rel in paths:
         got = acquire(repo, rel, prefer_snapshot=True)
         full = repo.top / rel
-        if not full.is_file():
-            raise InputError("err.file_missing", path=str(full))
-        items.append({**got, "result": full.read_bytes(), "explicit": bool(args.paths), "labels": labels_for(got["op"])})
+        if full.is_file():
+            result = full.read_bytes()
+        elif explicit and all(got.get(k) is None for k in ("base", "ours", "theirs")):
+            raise InputError("err.file_missing", path=str(full))     # 어디에도 없는 경로(오타 등)
+        else:
+            # 해결이 파일을 지웠다(git rm / rm): verify --commit 에서 결과 트리에 경로가 없을 때와 같이
+            # result=None 으로 넘긴다. 한쪽이 지운 진짜 수정/삭제면 건너뛰고, 아니면 빈 결과로 감사한다.
+            result = None
+        items.append({**got, "result": result, "explicit": explicit, "labels": labels_for(got["op"])})
     return items
 
 
@@ -937,6 +1154,7 @@ def build_verify_report(items: list[dict], eol: str, ignore_ws: bool) -> dict:
     files = []
     for item in items:
         found = verify_item(item, eol, ignore_ws)
+        found["info"] = list(item.get("info_notes", [])) + found["info"]
         for bucket, name in ((errors, "errors"), (warnings, "warnings"), (info, "info")):
             for f in found[name]:
                 f = dict(f)
@@ -987,10 +1205,14 @@ def finding_line(sev: str, f: dict, t: Translator) -> str:
     elif f.get("result_line") is not None:
         where = f" result:{f['result_line']}"
     params = {"side_label": label, "found": clip(f.get("found") or ""), "count": f.get("count", 0), "hunk": f.get("hunk", ""),
-              "similarity": "-" if f.get("similarity") is None else f["similarity"], "reason": f.get("reason", ""), "lines": f.get("lines", 0)}
+              "similarity": "-" if f.get("similarity") is None else f["similarity"], "reason": f.get("reason", ""), "lines": f.get("lines", 0),
+              "old": f.get("old", "")}
     why = t(f"kind.{f['kind']}", **params)
     text = f" {clip(f['text'])}" if f.get("text") not in (None, "") else ""
-    return f"{sev:<5} {f['path']} {f['kind']} {side or '-'}{where}{text} -- {why}"
+    if not side:
+        # 어느 한쪽에 속하지 않는 지적: 결과의 줄을 가리키면 "result", 아니면 파일 전체에 대한 것("file")
+        side = t("side.result") if f.get("base_line") is None and f.get("result_line") is not None else t("side.file")
+    return f"{sev:<5} {f['path']} {f['kind']} {side}{where}{text} -- {why}"
 
 
 def label_header(op: str, labels: dict[str, str], t: Translator) -> list[str]:
@@ -1012,13 +1234,14 @@ def render_verify(report: dict, t: Translator) -> str:
     for sev, name in (("ERROR", "errors"), ("WARN", "warnings"), ("INFO", "info")):
         for f in report[name]:
             lines.append(finding_line(sev, f, t))
-    judge = sum(1 for f in report["info"] if f["kind"] == "judgement_hunk")
+    # 판단이 필요한 덩어리 수: 쪽마다 INFO 가 하나씩 나오므로 (파일, 덩어리 id) 를 한 번만 센다
+    judge = len({(f["path"], f["hunk"]) for f in report["info"] if f["kind"] == "judgement_hunk"})
     if report["errors"]:
         lines.append(t("ver.fail", count=len(report["errors"]), warn=len(report["warnings"])))
     elif report["warnings"]:
         lines.append(t("ver.warn", count=len(report["warnings"])))
     else:
-        lines.append(t("ver.pass", info=judge))
+        lines.append(t("ver.pass_one" if judge == 1 else "ver.pass", info=judge))
     return "\n".join(lines)
 
 
@@ -1056,6 +1279,26 @@ def write_findings(path: str | None, lines: list[str]) -> None:
         Path(path).write_text("".join(x + "\n" for x in lines), encoding="utf-8")
 
 
+def input_problem_lines(kind: str, path: str | None) -> list[str]:
+    """--findings-file lines for an input problem (exit 3). The success-path summary format is not changed."""
+    return [f"input_error {kind} {path or '-'}", f"summary: exit={EXIT_INPUT} input_error={kind}"]
+
+
+def report_input_problem(args: argparse.Namespace, kind: str, path: str | None, message: str) -> int:
+    """Exit-3 answer in one call: the message on stderr as before, plus the same verdict as a ledger
+    (--json on stdout, --findings-file lines) so the caller never has to guess why the audit stopped."""
+    sys.stderr.write(message + "\n")
+    # findings_file 는 verify / resolve-trivial 에만 있는 옵션이라 Namespace 에 있는지 먼저 본다
+    if "findings_file" in args and args.findings_file:
+        try:
+            write_findings(args.findings_file, input_problem_lines(kind, path))
+        except OSError:
+            pass                    # the file itself cannot be written (that may be the problem); stderr has the reason
+    if args.json:
+        emit(dump({"ok": False, "exit_code": EXIT_INPUT, "input_error": {"kind": kind, "path": path, "message": message}}))
+    return EXIT_INPUT
+
+
 def span_text(h: dict, t: Translator) -> str:
     lo, hi = h["lo"], h["hi"]
     if lo == hi:
@@ -1075,21 +1318,42 @@ def dump(obj: object) -> str:
     return json.dumps(obj, ensure_ascii=False, indent=2)
 
 
+def stage_kind(repo: Repo, stages: dict[int, tuple[str, str]]) -> str:
+    """What kind of conflict one unmerged path is, judged from the staged contents (never from the file name)."""
+    if any(mode == "120000" for mode, _sha in stages.values()):
+        return "symlink"
+    blobs = {n: repo.git("cat-file", "blob", sha).stdout for n, (_mode, sha) in stages.items()}
+    return file_kind(blobs.get(1), blobs.get(2), blobs.get(3))
+
+
 def cmd_status(args: argparse.Namespace, t: Translator) -> int:
     repo = open_repo(args.repo)
     op = repo.operation()
     labels = labels_for(op)
-    unmerged = sorted(repo.unmerged())
+    stages = repo.unmerged()
+    unmerged = sorted(stages)
     snaps = list_snapshots(repo)
     mine = "stage3" if op == "rebase" else None
     if args.json:
-        emit(dump({"operation": op, "labels": labels, "my_commit_side": mine, "unmerged": unmerged, "snapshots": snaps}))
+        # unmerged_kinds 는 0.1.1 에서 더한 필드: 경로별 text / binary / add_add / modify_delete / symlink
+        kinds = {path: stage_kind(repo, stages[path]) for path in unmerged}
+        emit(dump({"operation": op, "labels": labels, "my_commit_side": mine, "unmerged": unmerged,
+                   "unmerged_kinds": kinds, "snapshots": snaps}))
         return EXIT_OK
     lines = [t("st.operation", op=op), t("st.stage2", label=t.label(labels["ours"])), t("st.stage3", label=t.label(labels["theirs"]))]
     if mine:
         lines.append(t("st.my_commit_side", side=mine))
     lines.append(t("st.unmerged", count=len(unmerged)) if unmerged else t("st.none_unmerged"))
     lines.extend(f"  {p}" for p in unmerged)
+    if not unmerged and op != "none":
+        # 모두 git add 했지만 아직 커밋 전: PATH 없는 verify 가 감사할 파일을 알려 준다(JSON 키는 늘리지 않는다)
+        resolved = both_changed_paths(repo, op)
+        if resolved:
+            lines.append(t("st.to_audit", paths=", ".join(resolved)))
+    deleted = deleted_change_paths(repo, op) if op != "none" else []
+    if deleted:
+        # 어느 쪽도 지우지 않았는데 작업 폴더에서 사라진 파일: PATH 없는 verify 가 잃은 변경으로 감사한다
+        lines.append(t("st.deleted", paths=", ".join(deleted)))
     lines.append(t("st.snapshots", paths=", ".join(snaps)) if snaps else t("st.no_snapshots"))
     emit("\n".join(lines))
     return EXIT_OK
@@ -1142,10 +1406,13 @@ def cmd_scan(args: argparse.Namespace, t: Translator) -> int:
         labels = labels_for(op)
     else:
         repo = open_repo(args.repo)
-        paths = [repo.rel(p) for p in args.paths] or sorted(repo.unmerged())
-        if not paths:
-            raise InputError("err.no_unmerged", path=str(repo.top))
         op = repo.operation()
+        # PATH 가 없으면 병합되지 않은 파일, 그것도 없으면(모두 git add 함) 진행 중 작업에서 양쪽이 바꾼 파일
+        paths = [repo.rel(p) for p in args.paths] or sorted(repo.unmerged()) or both_changed_paths(repo, op)
+        if not paths:
+            if op != "none":
+                raise InputError("err.nothing_to_audit", op=op, path=str(repo.top))
+            raise InputError("err.no_unmerged", path=str(repo.top))
         labels = labels_for(op)
         items = [acquire(repo, rel, prefer_snapshot=False) for rel in paths]
         prune_snapshots(repo)
@@ -1159,7 +1426,8 @@ def cmd_scan(args: argparse.Namespace, t: Translator) -> int:
         return EXIT_OK
     lines = label_header(op, labels, t)
     for entry in ledger["files"]:
-        lines.append(t("scan.file", path=entry["path"], kind=entry["kind"], count=len(entry["hunks"])))
+        n = len(entry["hunks"])
+        lines.append(t("scan.file_one" if n == 1 else "scan.file", path=entry["path"], kind=entry["kind"], count=n))
         if entry["kind"] != "text":
             lines.append("  " + t("scan.skipped", kind=entry["kind"]))
             continue
@@ -1170,7 +1438,8 @@ def cmd_scan(args: argparse.Namespace, t: Translator) -> int:
             lines.append("  " + t("scan.hunk", id=h["id"], cls=h["class"], span=span_text(h, t), mode=mode,
                                   ours=one(h["ours"]), theirs=one(h["theirs"])))
         if entry.get("git_merge_file_conflicts") is not None:
-            lines.append("  " + t("scan.cross", count=entry["git_merge_file_conflicts"]))
+            cross = entry["git_merge_file_conflicts"]
+            lines.append("  " + t("scan.cross_one" if cross == 1 else "scan.cross", count=cross))
     lines.extend(t("scan.snapshot", path=s) for s in snapshots[:1])
     emit("\n".join(lines))
     return EXIT_OK
@@ -1209,6 +1478,32 @@ def pick_side(lines: list[str], side: str) -> list[str] | None:
         elif part == side:
             out.append(line)
     return out if part == "outside" else None
+
+
+def marker_labels(data: bytes | None) -> dict[str, str]:
+    """The labels git wrote on the first conflict block of a working file, e.g. HEAD and the merged branch name.
+
+    resolve-trivial reuses them so the rewritten markers read like git's own. A label git did not write
+    (no base part in the default merge style) or a file without a conflict block keeps ours / base / theirs."""
+    names = dict(DEFAULT_MARKER_LABELS)
+    if not data or is_binary(data):
+        return names
+    size = 0
+    for line in split_lines(data):
+        if not size:
+            opened = re.match(r"(<{7,}) (.*\S)", line)
+            if opened:                                   # 첫 충돌 블록의 여는 표식: ours 라벨과 표식 길이
+                size = len(opened.group(1))
+                names["ours"] = opened.group(2).strip()
+            continue
+        base_label = re.match(rf"\|{{{size}}} (.*\S)", line)
+        if base_label:
+            names["base"] = base_label.group(1).strip()
+        closed = re.match(rf">{{{size}}} (.*\S)", line)
+        if closed:                                       # 닫는 표식: theirs 라벨, 첫 블록만 본다
+            names["theirs"] = closed.group(1).strip()
+            break
+    return names
 
 
 def untouched_conflict(current: bytes, item: dict, eol: str) -> bool:
@@ -1262,7 +1557,10 @@ def cmd_resolve(args: argparse.Namespace, t: Translator) -> int:
             if not p.is_file():
                 raise InputError("err.file_missing", path=str(p))
             files[key] = p.read_bytes()
-        targets = [({"path": args.name or Path(args.ours).name, **files}, Path(args.out) if args.out else None)]
+        # 보고서의 파일 이름: --name > --out 파일(지금 만드는 해결본) > --ours 파일. 영수증에는 이름이 들어가지 않는다.
+        shown = args.name or Path(args.out or args.ours).name
+        targets = [({"path": shown, **files}, Path(args.out) if args.out else None)]
+        marker_names = [DEFAULT_MARKER_LABELS]           # 파일 모드: 0.1.0 과 같은 ours / base / theirs
     else:
         repo = open_repo(args.repo)
         paths = [repo.rel(p) for p in args.paths] or sorted(repo.unmerged())
@@ -1272,12 +1570,15 @@ def cmd_resolve(args: argparse.Namespace, t: Translator) -> int:
             raise InputError("err.out_one_path")
         targets = [(acquire(repo, rel, prefer_snapshot=False), Path(args.out) if args.out else repo.top / rel)
                    for rel in paths]
-    for item, dest in targets:
+        # 저장소 모드: 작업 파일에 git 이 써 둔 표식 라벨(HEAD, 병합한 브랜치 이름 등)을 그대로 다시 쓴다
+        marker_names = [marker_labels((repo.top / rel).read_bytes() if (repo.top / rel).is_file() else None)
+                        for rel in paths]
+    for (item, dest), names in zip(targets, marker_names):
         kind = file_kind(item["base"], item["ours"], item["theirs"])
         if kind != "text":
             raise InputError("err.not_text", kind=kind, path=item["path"])
         base, ours, theirs = (lines_of(item[k], args.eol) for k in ("base", "ours", "theirs"))
-        merged, applied, remaining = render_resolution(base, build_hunks(base, ours, theirs), args.whitespace)
+        merged, applied, remaining = render_resolution(base, build_hunks(base, ours, theirs), args.whitespace, names)
         crlf = item["ours"] is not None and b"\r\n" in item["ours"]
         body = ("\r\n" if crlf else "\n").join(merged) + (("\r\n" if crlf else "\n") if merged else "")
         results.append({"path": item["path"], "applied": applied, "remaining": remaining, "written": False,
@@ -1290,10 +1591,10 @@ def cmd_resolve(args: argparse.Namespace, t: Translator) -> int:
                 continue
             reason = overwrite_problem(r["_dest"], r["_body"].encode("utf-8"), r["_item"], args.eol)
             if reason:
-                refused.append(t("res.edited", path=r["_dest"], reason=t(reason)))
+                refused.append((str(r["_dest"]), t("res.edited", path=r["_dest"], reason=t(reason))))
         if refused:
-            sys.stderr.write("\n".join(refused) + "\n")
-            return EXIT_INPUT
+            # 입력 문제와 같은 장부로 돌려준다(--json / --findings-file), 경로는 처음 거부한 파일
+            return report_input_problem(args, "hand_edited", refused[0][0], "\n".join(msg for _p, msg in refused))
     for r in results:
         if r["_dest"] is not None and not args.dry_run:
             r["_dest"].write_bytes(r["_body"].encode("utf-8"))
@@ -1313,7 +1614,8 @@ def cmd_resolve(args: argparse.Namespace, t: Translator) -> int:
         return EXIT_OK
     lines = []
     for r in results:
-        lines.append(t("res.file", path=r["path"], applied_n=len(r["applied"]), remaining_n=len(r["remaining"]),
+        lines.append(t("res.file_one" if len(r["applied"]) == 1 else "res.file", path=r["path"],
+                       applied_n=len(r["applied"]), remaining_n=len(r["remaining"]),
                        applied=", ".join(r["applied"]) or "-", remaining=", ".join(r["remaining"]) or "-"))
         lines.append(t("res.remaining", count=len(r["remaining"])))
         if r["written"]:
@@ -1528,7 +1830,7 @@ def build_parser(t: Translator) -> argparse.ArgumentParser:
     res.add_argument("--findings-file", metavar="FILE", help=t("opt_findings"))
     res.add_argument("--whitespace", choices=("ours", "theirs"), default="ours", help=t("opt_whitespace"))
     ver_paths, ver = make("verify", "cmd_verify")
-    ver_paths.add_argument("paths", nargs="*", metavar="PATH", help=t("opt_paths"))
+    ver_paths.add_argument("paths", nargs="*", metavar="PATH", help=t("opt_paths_verify"))
     add_file_mode(ver, t)
     ver.add_argument("--result", metavar="FILE", help=t("opt_result"))
     ver.add_argument("--commit", metavar="SHA", help=t("opt_commit"))
@@ -1558,10 +1860,14 @@ def main(argv: list[str] | None = None) -> int:
     try:
         return COMMANDS[args.command](args, t)
     except InputError as err:
-        sys.stderr.write(t(err.key, **err.params) + "\n")
-        return EXIT_INPUT
+        return report_input_problem(args, err.kind, err.path, t(err.key, **err.params))
     except BrokenPipeError:
         return EXIT_OK
+    except OSError as err:
+        # 파일을 읽거나 쓰지 못한 것도 입력 문제(종료 3)로 돌려준다 — 처리 안 된 예외의 종료 1 은 "변경 유실"로 읽힌다
+        path = None if err.filename is None else str(err.filename)
+        return report_input_problem(args, "os_error", path,
+                                    t("err.os_error", path=path or "-", reason=err.strerror or str(err)))
 
 
 if __name__ == "__main__":

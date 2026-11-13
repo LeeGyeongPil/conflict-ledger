@@ -8,6 +8,7 @@ obtained by running the bundled script on the fixture, never typed by hand.
 """
 from __future__ import annotations
 
+import re
 import shutil
 import struct
 import subprocess
@@ -36,14 +37,21 @@ TRIGGERS = [
     "이 머지 커밋에서 feature 브랜치 변경이 사라진 것 같은데 검사해 줘.",
 ]
 
+# 0.1.1: 02, 05 and 07 used to ask for real multi-step work in an empty folder (create files, run commands), which
+# ran past the 6-turn budget without the skill ever firing. Same topic and closeness, now "show me, change nothing",
+# so the budget measures whether the skill fires. 0.1.0 wording:
+#   02 "Set up a custom merge driver for package-lock.json in .gitattributes."
+#   05 "Write a GitHub Actions job that fails PRs which have merge conflicts with main."
+#   07 "Undo my last merge - I want to go back to before it."
 NEAR = [
     "Explain the difference between git merge and git rebase.",
-    "Set up a custom merge driver for package-lock.json in .gitattributes.",
+    "What should I put in .gitattributes and git config to use a custom merge driver for package-lock.json? "
+    "Just show me the lines, don't change any files.",
     "Show me the diff between main and my feature branch.",
     "Squash my last five commits into one.",
-    "Write a GitHub Actions job that fails PRs which have merge conflicts with main.",
+    "Show me a GitHub Actions job that fails PRs which have merge conflicts with main - just the YAML, don't create files.",
     "Set merge.conflictStyle to zdiff3 globally.",
-    "Undo my last merge - I want to go back to before it.",
+    "How do I undo my last merge and go back to before it? Give me the commands, don't run them.",
     "엑셀 파일 두 개 비교해서 바뀐 행만 알려 줘.",
 ]
 
@@ -185,6 +193,25 @@ def fixture_binary_error() -> dict[str, bytes]:
             "logo.png": tiny_png(200)}
 
 
+def packed_records(rows: list[tuple[int, str]]) -> bytes:
+    """A small synthetic binary export: a header, then (id, length, name) records with NUL padding."""
+    out = b"EXP1\x00\x00" + struct.pack("<H", len(rows))
+    for row_id, name in rows:
+        data = name.encode("ascii")
+        out += struct.pack("<IH", row_id, len(data)) + data + b"\x00" * (8 - len(data) % 8)
+    return out
+
+
+def fixture_disguised_binary() -> dict[str, bytes]:
+    """Binary content behind a .txt name: only reading the bytes (as the script does) tells it apart."""
+    base = [(1, "alpha"), (2, "beta"), (3, "gamma")]
+    ours = base + [(4, "delta")]
+    theirs = [(1, "alpha"), (2, "beta-2"), (3, "gamma")]
+    resolved = [(1, "alpha"), (2, "beta-2"), (3, "gamma"), (4, "delta")]
+    return {"export_base.txt": packed_records(base), "export_ours.txt": packed_records(ours),
+            "export_theirs.txt": packed_records(theirs), "export.txt": packed_records(resolved)}
+
+
 # --------------------------------------------------------------------------- script runs
 
 def run_script(cwd: Path, *args: str) -> tuple[int, str]:
@@ -313,6 +340,21 @@ def main() -> int:
          "logo_base.png, logo_ours.png and logo_theirs.png are the three sides of a conflicting image, and logo.png is my "
          "resolution. Audit the resolution and tell me whether it kept both sides' changes.",
          files, {"binary-error": grader("regex", r"(binary file, line audit skipped|바이너리 파일, 줄 감사 건너뜀): \S*logo\S*\.png", target="trace")})
+
+    # 7 (error path, 0.1.1): binary content behind a .txt name; the verdict and its findings lines come from the script
+    files = fixture_disguised_binary()
+    got = findings_for(files, ["verify", "--base", "export_base.txt", "--ours", "export_ours.txt", "--theirs",
+                               "export_theirs.txt", "--result", "export.txt"])
+    label, kind, reported = got[0].split(" ", 2)             # "input_error <kind> <path>" as the script wrote it
+    named = rf"{label} {kind} \S*{re.escape(Path(reported).name)}"         # the path may be given absolute
+    task("error-disguised-binary",
+         "export_base.txt, export_ours.txt and export_theirs.txt are the common ancestor, my branch and the other branch "
+         "of export.txt, which had a merge conflict, and export.txt is my resolution. Check that the resolution kept both "
+         "sides' changes. Write the audit's result to findings.txt, ending with the audit's own `summary:` line exactly as "
+         "the audit produced it.",
+         files, {"binary-error": grader("regex", r"(binary file, line audit skipped|바이너리 파일, 줄 감사 건너뜀): \S*export\S*\.txt",
+                                        target="trace"),
+                 "input-error": grader("regex", named), "totals": grader("regex", got[-1])})
     return 0
 
 

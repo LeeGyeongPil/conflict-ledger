@@ -1,6 +1,6 @@
 {
   "name": "conflict-ledger",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Classifies git merge conflicts against the merge base and audits that a resolution kept both sides' changes.",
   "author": {"name": "LeeGyeongPil"},
   "license": "MIT",
