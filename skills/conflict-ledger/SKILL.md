@@ -4,7 +4,7 @@ description: Classifies git merge, rebase and cherry-pick conflict hunks against
 license: MIT
 compatibility: Python 3.10+ (standard library only) and git 2.35+. No network access.
 metadata:
-  version: "0.1.1"
+  version: "0.1.2"
 ---
 
 # Conflict ledger
@@ -15,9 +15,9 @@ Run every command from the user's current folder (the repository), calling the s
 
 ## First command
 
-Run exactly one of these before you say anything about the conflict, and start from its output. Do not open, diff or inspect the files yourself first.
+Run exactly one of these before you say anything about the conflict, and start from its output. Do not open, diff or inspect the files yourself first. This holds for every file type: images and other files that are not text go to the same command, and viewing an image (with the Read tool or any viewer) or comparing its pixels is not an audit. The script's exit code and message are the answer, even when the files cannot be line-audited.
 
-- The user gives the base, ours and theirs files and a resolved file: `python3 scripts/conflict_ledger.py verify --base BASE --ours OURS --theirs THEIRS --result RESULT --json`. Add `--findings-file FILE` when the user wants the result in a file, and `--operation rebase` when the files come from a rebase.
+- The user gives the base, ours and theirs files and a resolved file, of any type (images included): `python3 scripts/conflict_ledger.py verify --base BASE --ours OURS --theirs THEIRS --result RESULT --json`. Add `--findings-file FILE` when the user wants the result in a file, and `--operation rebase` when the files come from a rebase.
 - The user gives the base, ours and theirs files and asks you to resolve them: `python3 scripts/conflict_ledger.py resolve-trivial --base BASE --ours OURS --theirs THEIRS --out FILE` (add `--findings-file FILE` when the user wants the result in a file).
 - The user names a merge commit that already exists: `python3 scripts/conflict_ledger.py verify --commit SHA --json`.
 - Anything else: `python3 scripts/conflict_ledger.py status --json`.

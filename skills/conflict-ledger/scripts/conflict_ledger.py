@@ -21,7 +21,7 @@ import tempfile
 from collections import Counter
 from pathlib import Path
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 EXIT_OK, EXIT_ERROR, EXIT_WARN, EXIT_INPUT = 0, 1, 2, 3
 SIDES = ("ours", "theirs")

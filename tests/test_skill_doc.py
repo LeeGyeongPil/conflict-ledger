@@ -121,6 +121,23 @@ def test_no_shortcut_sentence_for_binary_files():
     assert "Do not draw a conclusion from a file name, an extension or the bytes" in rules
 
 
+def test_first_command_holds_for_files_that_are_not_text():
+    """0.1.2: given four image files, a strong model sometimes viewed the images (its file viewer renders them)
+    and answered without running the script. The First command section must say, before its command list, that
+    the rule covers every file type, that viewing an image is not an audit and that the script's exit code and
+    message are the answer; the file-mode bullet must say it takes files of any type."""
+    first = section(BODY, "First command")
+    intro, commands = first.split("\n- ", 1)
+    assert "every file type" in intro
+    assert "images and other files that are not text go to the same command" in intro
+    assert re.search(r"viewing an image .*is not an audit", intro)
+    assert "exit code and message are the answer, even when the files cannot be line-audited" in intro
+    file_mode = commands.split("\n- ", 1)[0]
+    assert "of any type (images included)" in file_mode and "verify --base" in file_mode
+    # the rule comes before any command, so it is read before the agent picks a tool
+    assert first.index("every file type") < first.index("`python3 ")
+
+
 def test_step_six_names_where_the_receipt_is():
     """F-3: the default text output of verify has no summary line, so step 6 points at --findings-file / --json."""
     workflow = section(BODY, "Workflow")
