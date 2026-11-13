@@ -13,7 +13,7 @@ import json
 import pytest
 
 import conflict_ledger as cl
-from conftest import make_repo, scenario
+from conftest import BASE, Sandbox, make_repo, scenario
 
 
 def binary_bytes(seed: str) -> bytes:
@@ -175,9 +175,88 @@ def test_missing_file(tmp_path, run_cli):
     put(tmp_path, {"b": "a\n", "o": "a\n", "t": "a\n"})
     code, out, _ = run_cli("--json", *file_args(["b", "o", "t", "nowhere.txt"]), "--findings-file", "f.txt")
     problem = ledger(out)
-    assert code == 3 and problem == {"kind": "file_missing", "path": "nowhere.txt", "message": "file not found: nowhere.txt"}
+    # 0.1.3: 메시지가 고칠 방법까지 알려 준다(kind·path·findings 줄은 그대로)
+    assert code == 3 and problem == {
+        "kind": "file_missing", "path": "nowhere.txt",
+        "message": "file not found: nowhere.txt; check the path (relative paths are read from the current folder)"}
     assert (tmp_path / "f.txt").read_text().splitlines() == ["input_error file_missing nowhere.txt",
                                                              "summary: exit=3 input_error=file_missing"]
+    # 같은 입력을 한국어로: 문구만 바뀌고 kind·path 는 같다
+    code, out, err = run_cli("--json", "--lang", "ko", *file_args(["b", "o", "t", "nowhere.txt"]))
+    ko_problem = ledger(out)
+    assert code == 3 and (ko_problem["kind"], ko_problem["path"]) == ("file_missing", "nowhere.txt")
+    assert ko_problem["message"].startswith("파일을 찾을 수 없음: nowhere.txt, 경로를 확인할 것")
+    assert err.strip() == ko_problem["message"]
+
+
+# --------------------------------------------------------------------------- a binary file next to a text file
+
+def test_binary_beside_text_in_a_real_merge(tmp_path, capsys):
+    """One real merge where a text file and a binary file both conflict (stages 1/2/3 for both).
+    Without a PATH, verify audits the text file and only notes the binary one (file_skipped, not an input
+    problem); naming the binary path explicitly is still an input problem (exit 3, kind binary)."""
+    ours, theirs, good = scenario()
+    sb = Sandbox(tmp_path / "mixed", capsys)
+    sb.root.mkdir()
+    sb.git("init", "-q", "-b", "main")
+    sb.write("notes.txt", BASE)
+    sb.write("pixels.dat", binary_bytes("base"))
+    sb.commit("base")
+    sb.git("checkout", "-q", "-b", "feature")
+    sb.write("notes.txt", theirs)
+    sb.write("pixels.dat", binary_bytes("theirs"))
+    sb.commit("theirs")
+    sb.git("checkout", "-q", "main")
+    sb.write("notes.txt", ours)
+    sb.write("pixels.dat", binary_bytes("ours"))
+    sb.commit("ours")
+    sb.git("merge", "--no-edit", "feature", check=False)          # 두 파일 모두 충돌
+
+    # 두 경로 모두 인덱스 stage 1·2·3 이 있다
+    stages: dict[str, set[str]] = {}
+    for row in sb.stages().splitlines():
+        meta, path = row.split("\t", 1)
+        stages.setdefault(path, set()).add(meta.split()[2])
+    assert stages == {"notes.txt": {"1", "2", "3"}, "pixels.dat": {"1", "2", "3"}}
+
+    # status 와 scan 이 경로별 종류를 같게 본다
+    code, out, _ = sb.run("--json", "status")
+    st = json.loads(out)
+    assert code == 0 and st["unmerged"] == ["notes.txt", "pixels.dat"]
+    assert st["unmerged_kinds"] == {"notes.txt": "text", "pixels.dat": "binary"}
+    code, out, _ = sb.run("--json", "scan")
+    assert code == 0
+    assert {f["path"]: f["kind"] for f in json.loads(out)["files"]} == {"notes.txt": "text", "pixels.dat": "binary"}
+
+    # theirs 통째로 푼 텍스트 파일: 텍스트 감사가 되살아난 삭제를 잡고, 바이너리는 건너뜀 알림만
+    sb.write("notes.txt", theirs)
+    code, out, _ = sb.run("--json", "verify")
+    report = json.loads(out)
+    assert code == 1 and "input_error" not in report
+    assert "deletion_reverted" in [e["kind"] for e in report["errors"]]
+    assert {f["path"]: f["skipped"] for f in report["files"]} == {"notes.txt": None, "pixels.dat": "binary"}
+    skipped = [i for i in report["info"] if i["kind"] == "file_skipped"]
+    assert [(i["path"], i["reason"]) for i in skipped] == [("pixels.dat", "binary")]
+
+    code, out, _ = sb.run("verify")
+    assert code == 1 and "binary file: line audit skipped" in out
+    assert out.strip().splitlines()[-1].startswith("FAIL:")
+    code, out, _ = sb.run("--lang", "ko", "verify")
+    assert code == 1 and "binary 파일, 줄 감사 건너뜀" in out
+
+    # 양쪽을 합친 해결: 전체 판정은 텍스트 감사 결과(통과)를 따른다
+    sb.write("notes.txt", good)
+    found = tmp_path / "found.txt"
+    code, out, _ = sb.run("--json", "verify", "--findings-file", str(found))
+    assert code == 0 and json.loads(out)["ok"] is True
+    rows = found.read_text(encoding="utf-8").splitlines()
+    assert rows[-1].startswith("summary: ") and "exit=0" in rows[-1]
+    assert not any(r.startswith("input_error") for r in rows)
+
+    # 바이너리 경로를 직접 지정하면 지금처럼 입력 문제다
+    code, out, _ = sb.run("--json", "verify", "pixels.dat")
+    problem = ledger(out)
+    assert code == 3 and problem["kind"] == "binary" and problem["path"] == "pixels.dat"
 
 
 def test_single_parent_commit(tmp_path, capsys):

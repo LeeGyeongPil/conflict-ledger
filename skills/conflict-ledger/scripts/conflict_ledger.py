@@ -21,7 +21,7 @@ import tempfile
 from collections import Counter
 from pathlib import Path
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 
 EXIT_OK, EXIT_ERROR, EXIT_WARN, EXIT_INPUT = 0, 1, 2, 3
 SIDES = ("ours", "theirs")
@@ -79,7 +79,7 @@ MESSAGES: dict[str, dict[str, str]] = {
         "err.not_two_parent": "commit {sha} is not a two-parent merge",
         "err.bad_commit": "cannot resolve commit {sha}",
         "err.no_merge_base": "the parents of {sha} have no merge base",
-        "err.file_missing": "file not found: {path}",
+        "err.file_missing": "file not found: {path}; check the path (relative paths are read from the current folder)",
         "err.triple_together": "--base/--ours/--theirs must be given together",
         "err.result_required": "file mode verify needs --result FILE",
         "err.outside_repo": "path is outside the repository: {path}",
@@ -212,7 +212,7 @@ MESSAGES: dict[str, dict[str, str]] = {
         "err.not_two_parent": "커밋 {sha} 은 부모가 2개인 병합 커밋이 아님",
         "err.bad_commit": "커밋을 찾을 수 없음: {sha}",
         "err.no_merge_base": "커밋 {sha} 의 두 부모에 공통 조상이 없음",
-        "err.file_missing": "파일을 찾을 수 없음: {path}",
+        "err.file_missing": "파일을 찾을 수 없음: {path}, 경로를 확인할 것(상대 경로는 현재 폴더 기준)",
         "err.triple_together": "--base/--ours/--theirs 는 함께 줘야 함",
         "err.result_required": "파일 모드 verify 는 --result 파일이 필요함",
         "err.outside_repo": "저장소 밖의 경로: {path}",
