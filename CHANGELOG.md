@@ -3,6 +3,23 @@
 All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [0.1.3] - 2026-11-14
+
+An evaluation-scope release. The audit is the same as in 0.1.2: findings, exit codes, `--json` fields and
+receipts do not change, and `SKILL.md` changed only in its version number. One error message now says how to fix
+the input.
+
+### Changed
+- Evaluation set: the task case `task-error-binary` and its fixtures are removed. It gave the agent only four PNG images (base, ours, theirs and a resolution) and asked whether the resolution kept both sides' changes. In three pre-release evaluations in a row, opus answered it at least once by looking at the images instead of running the script, while sonnet and haiku ran the script; two `SKILL.md` rewrites (0.1.1, 0.1.2) did not change that. Images are outside what this skill audits (line change sets of text files): the script can only report them as `binary` (exit 3). Binary handling stays covered by the test suite, now including a binary file next to a text file in a real merge, and the error-path task `task-error-disguised-binary` (binary content behind `.txt` names) stays in the measured set. The set now has 12 trigger, 12 non-trigger and 6 task cases; the prompts and graders of the other task cases are unchanged.
+
+### Fixed
+- The `file_missing` input problem now says how to fix it: `file not found: <path>; check the path (relative paths are read from the current folder)` (Korean: `파일을 찾을 수 없음: <path>, 경로를 확인할 것(상대 경로는 현재 폴더 기준)`). Its `kind`, `path` and `--findings-file` lines are unchanged.
+
+**Known issues (still open):**
+- The evaluation's mean score gain is partly the receipt line, which the baseline run cannot produce.
+- `scan` shows `ours: (deleted)` for an insertion made only on the other side.
+- Given only image files, an agent may look at the pictures instead of running the script. The script does not compare images (it reports `binary`, exit 3); compare them by hand.
+
 ## [0.1.2] - 2026-11-13
 
 A skill-document release. The script's behavior, exit codes, finding kinds, `--json` fields and receipts are the same
@@ -64,6 +81,7 @@ problem kind (`skill_folder`) are new.
 
 The issues known at 0.1.0 are listed under 0.1.1: fixed ones under Fixed, those that remain under Known issues.
 
+[0.1.3]: https://github.com/LeeGyeongPil/conflict-ledger/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/LeeGyeongPil/conflict-ledger/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/LeeGyeongPil/conflict-ledger/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/LeeGyeongPil/conflict-ledger/releases/tag/v0.1.0

@@ -4,7 +4,7 @@
 
 An agent skill for git merge, rebase and cherry-pick conflicts. When your coding agent resolves a conflict, the bundled Python script classifies every hunk against the common ancestor (the merge base) and then checks, line by line, that the result kept every change from both sides. A resolution can pass the tests and still silently drop one side's work; this audit catches that before the commit.
 
-Current version: 0.1.2 — see [CHANGELOG.md](CHANGELOG.md).
+Current version: 0.1.3 — see [CHANGELOG.md](CHANGELOG.md).
 
 ![demo run: two wrong resolutions are flagged, the combined one passes](docs/images/01-hero.png)
 *`demo` builds a throwaway repository with a real conflict. Taking "ours" or "theirs" wholesale gets exit code 1; combining both sides gets 0.*
@@ -329,14 +329,16 @@ Output is English or Korean: `--lang en|ko` beats `CONFLICT_LEDGER_LANG`, which 
 |---|---|
 | Triggers when it should | 12/12 |
 | Stays quiet when it should not | 12/12 |
-| Tasks solved with the skill | 7/7 |
-| Tasks solved without it (baseline) | 1/7 |
-| Mean score gain (Δ) | +0.53 |
-| Tasks that catch a broken script | 7/7 |
-| Codex CLI | 7/7 tasks · verified |
+| Tasks solved with the skill | 6/6 |
+| Tasks solved without it (baseline) | 1/6 |
+| Mean score gain (Δ) | +0.52 |
+| Tasks that catch a broken script | 6/6 |
+| Codex CLI | 6/6 tasks · verified |
 
-Measured 2026-11-13 with Claude Code 2.1.322 · sonnet · 3 runs per case · codex-cli 0.154.0
+Measured 2026-11-14 with Claude Code 2.1.322 · sonnet · 3 runs per case · codex-cli 0.154.0
 <!-- skill-eval:end -->
+
+Evaluation scope from 0.1.3: the task case that gave the agent only four PNG images (`task-error-binary`) was removed from the evaluation set. In three pre-release evaluations in a row, opus answered it at least once by looking at the images instead of running the script (sonnet and haiku ran it), and images are not what this skill audits: the script only reports them as `binary` (exit 3). Binary handling is still checked by the test suite, including a binary file next to a text file in a real merge, and by the error-path task `task-error-disguised-binary` (binary content behind `.txt` names), which is measured on every model. The evaluation has 12 trigger, 12 non-trigger and 6 task cases.
 
 Behavior confirmed during review (clean container and local runs):
 - The test suite passes (the exact count depends on the checkout: tests that read git tags are skipped in a copy without tags) and the example output shown in this README matches a real run.
@@ -370,7 +372,7 @@ flowchart LR
 Use it when an agent (or you) resolves conflicts and you want a deterministic check that nothing from either side disappeared, including changes outside the conflict markers.
 
 ## Limitations
-It is a line-level audit: exit 0 means no lost line was found, not that the resolution is right. Judged hunks (`true_conflict`) are reported only as INFO similarities, so exit 0 does not prove a one-line `true_conflict` kept both intents (picking one side's line can still pass when the lines are similar). It does not judge meaning, merge by syntax, handle octopus merges or officially support Windows. Renames are followed only where git pairs the paths: in the index stages of a conflict still unmerged, and in `verify --commit` when git's rename detection pairs them without doubt (one side renamed the file, or both renamed it to the same name). A file the two sides renamed to different names is audited path by path and needs a person's check. Binary files (detected by content), add/add and real modify/delete conflicts (one side deleted the file and you kept that deletion) are not line-audited: the script reports them (exit 3 with the reason, or a `file_skipped` note) and a person decides them. A conflict marker left in such a file is still an error (exit 1), so an add/add file left as git wrote it never passes. A file that the resolution deleted although no side deleted it is different: it is audited as an empty result, so every line either side added or both sides kept is reported as lost (exit 1). Naming such a deleted path audits that file instead of failing with `file_missing`. Because difflib aligns differently from git's xdiff, hunk boundaries can differ from git's markers, and inside runs of identical lines the position of a deleted line can be off by one.
+It is a line-level audit: exit 0 means no lost line was found, not that the resolution is right. Judged hunks (`true_conflict`) are reported only as INFO similarities, so exit 0 does not prove a one-line `true_conflict` kept both intents (picking one side's line can still pass when the lines are similar). It does not judge meaning, merge by syntax, handle octopus merges or officially support Windows. Renames are followed only where git pairs the paths: in the index stages of a conflict still unmerged, and in `verify --commit` when git's rename detection pairs them without doubt (one side renamed the file, or both renamed it to the same name). A file the two sides renamed to different names is audited path by path and needs a person's check. Binary files (detected by content), add/add and real modify/delete conflicts (one side deleted the file and you kept that deletion) are not line-audited: the script reports them (exit 3 with the reason, or a `file_skipped` note) and a person decides them. A conflict marker left in such a file is still an error (exit 1), so an add/add file left as git wrote it never passes. Images are binary files to the script and are never compared; given only image files, an agent may look at the pictures itself instead of running the script, which is not this audit. A file that the resolution deleted although no side deleted it is different: it is audited as an empty result, so every line either side added or both sides kept is reported as lost (exit 1). Naming such a deleted path audits that file instead of failing with `file_missing`. Because difflib aligns differently from git's xdiff, hunk boundaries can differ from git's markers, and inside runs of identical lines the position of a deleted line can be off by one.
 
 ## Alternatives
 Other tools for neighbouring jobs: [mergiraf](https://mergiraf.org/) (syntax-aware merge driver), [git rerere](https://git-scm.com/docs/git-rerere) (reuse recorded resolutions), and other conflict-resolution skills such as [warpdotdev/common-skills](https://github.com/warpdotdev/common-skills) and [antinomyhq/forge](https://github.com/antinomyhq/forge). Check their documentation for what they cover; they can be used alongside this audit.
@@ -385,10 +387,10 @@ Other tools for neighbouring jobs: [mergiraf](https://mergiraf.org/) (syntax-awa
 ```
 uv sync && uv run pytest -q
 ```
-`evals/` holds 12 trigger, 12 non-trigger and 7 task cases in the `claude plugin eval` format (`evals/fixtures/` has the inputs); `tools/build_evals.py` regenerates them.
+`evals/` holds 12 trigger, 12 non-trigger and 6 task cases in the `claude plugin eval` format (`evals/fixtures/` has the inputs); `tools/build_evals.py` regenerates them.
 
 ## Changelog
-Current version: 0.1.2. Changes and known issues for every release are in [CHANGELOG.md](CHANGELOG.md).
+Current version: 0.1.3. Changes and known issues for every release are in [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 MIT
