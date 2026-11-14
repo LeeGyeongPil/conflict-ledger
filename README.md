@@ -331,7 +331,7 @@ Output is English or Korean: `--lang en|ko` beats `CONFLICT_LEDGER_LANG`, which 
 | Stays quiet when it should not | 12/12 |
 | Tasks solved with the skill | 6/6 |
 | Tasks solved without it (baseline) | 1/6 |
-| Mean score gain (Δ) | +0.52 |
+| Mean score gain (Δ) | +0.50 |
 | Tasks that catch a broken script | 6/6 |
 | Codex CLI | 6/6 tasks · verified |
 

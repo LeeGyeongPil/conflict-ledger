@@ -331,7 +331,7 @@ python3 skills/conflict-ledger/scripts/conflict_ledger.py --lang ko verify --bas
 | 필요 없을 때 안 불림 | 12/12 |
 | 스킬로 푼 작업 | 6/6 |
 | 스킬 없이 푼 작업(기준선) | 1/6 |
-| 평균 점수 차이(Δ) | +0.52 |
+| 평균 점수 차이(Δ) | +0.50 |
 | 가짜 스크립트를 잡아낸 비율 | 6/6 |
 | Codex CLI | 작업 6/6 통과 · 확인됨 |
 
