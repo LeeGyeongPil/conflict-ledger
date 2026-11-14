@@ -21,7 +21,7 @@ A hunk is a run of base lines changed by ours, theirs, or both (touching changes
 | `true_conflict` | both changed it differently | no, needs judgement |
 | `both_added_same_point` | both inserted different lines at the same point | no, needs judgement |
 
-File-level kinds reported by `scan` and not line-audited: `add_add` (no base), `modify_delete`, `binary`.
+File-level kinds reported by `scan` and not line-audited: `add_add` (no base), `modify_delete`, `binary`. In `verify`, a `modify_delete` file is skipped only when the resolution takes the deletion; a kept file is line-audited (see below).
 
 ## Findings
 
@@ -71,7 +71,7 @@ Command-line usage mistakes also exit 3 but print only the usage line and the er
 `status --json` reports each unmerged path's kind in `unmerged_kinds`: `text`, `binary`, `add_add`,
 `modify_delete` or `symlink`. Only `text` paths are line-audited. `verify` on binary files given in file mode or named
 as a PATH is the `binary` input problem above; binary files it finds by itself (no PATH given), every modify/delete
-file (one side deleted it) and every add/add file still present in the result are listed as `file_skipped` (info) and
+file whose deletion the resolution took (one side deleted it and the result has no file) and every add/add file still present in the result are listed as `file_skipped` (info) and
 need a person's decision. Skipping the line audit never skips the marker check: if the result of such a file is text
 and still holds an opening and a closing conflict marker that no version had, it is `conflict_marker_left` (exit 1),
 with or without PATH and in `verify --commit`. In file mode a text result with markers is that error even when the
@@ -87,8 +87,11 @@ A resolution that deletes a file no side deleted (`git rm`, `rm`, or a merge com
 the file is audited as an empty result. Every line a side added is `addition_dropped` (judged hunks included, since
 nothing of them survived) and every line both sides kept is `base_line_lost`, so `verify` fails with exit 1. This
 holds whether one or both sides changed the file, with or without PATH, before and after the commit
-(`verify --commit`). Taking a deletion that one side made (a real modify/delete, or a clean one-sided delete) is
-still `file_skipped` with reason `modify_delete`.
+(`verify --commit`). A modify/delete file that the resolution keeps is not skipped either: the deletion was not taken,
+so the deleting side is read as the base and the file is audited against the side that edited it. A line that side
+added or changed and the result lacks is `addition_dropped` (exit 1); keeping its content is exit 0. Taking a
+deletion that one side made (a real modify/delete, or a clean one-sided delete) is still `file_skipped` with reason
+`modify_delete`.
 
 Without PATH, `verify` audits the unmerged files, the files with a `scan` snapshot and, while a merge, rebase,
 cherry-pick or revert is in progress, every file both sides changed against the base, plus every file either side

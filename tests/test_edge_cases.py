@@ -567,6 +567,12 @@ def test_side_less_findings_name_the_file_or_result_in_text(tmp_path, run_cli):
     (None, None, b"new\n", None, None, [("addition_dropped", "theirs", "new")]),
     # a real modify/delete whose deletion was taken: skipped, not an error
     (b"a\n", b"a\nB\n", None, None, "modify_delete", []),
+    # modify/delete where the resolution keeps the file but loses the kept side's edit: audited, not skipped
+    (b"a\n", b"a\nB\n", None, b"a\n", None, [("addition_dropped", "ours", "B")]),
+    # ... and the same when the other side is the one that deleted
+    (b"a\n", None, b"a\nB\n", b"a\n", None, [("addition_dropped", "theirs", "B")]),
+    # keeping the edited content is clean
+    (b"a\n", b"a\nB\n", None, b"a\nB\n", None, []),
     # add/add still present in the result keeps the 0.1.0 behaviour (skipped)
     (None, b"o\n", b"t\n", b"o\n", "add_add", []),
 ])
@@ -651,19 +657,20 @@ MARKED = b"<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> feature\n"
 
 @pytest.mark.parametrize("base,ours,theirs,skipped", [
     (None, b"ours\n", b"theirs\n", "add_add"),
-    (b"a\n", b"a\nB\n", None, "modify_delete"),            # the kept side's file was edited and markers were pasted in
+    (b"a\n", b"a\nB\n", None, None),                       # kept after a modify/delete: line-audited now, markers still found
     (b"\0bin", b"\0ours", b"\0theirs", "binary"),          # binary versions, but the result is text with markers
 ])
 def test_markers_are_checked_for_every_skipped_kind(base, ours, theirs, skipped):
     found = cl.verify_item({"path": "x", "base": base, "ours": ours, "theirs": theirs, "result": MARKED,
                             "explicit": False}, "normalize", False)
     assert found["skipped"] == skipped
-    assert [(e["kind"], e["result_line"]) for e in found["errors"]] == [("conflict_marker_left", 1)]
-    assert [i["kind"] for i in found["info"]] == ["file_skipped"]
-    # without markers the same inputs stay a plain skip
-    clean = cl.verify_item({"path": "x", "base": base, "ours": ours, "theirs": theirs, "result": b"ours\ntheirs\n",
-                            "explicit": False}, "normalize", False)
-    assert clean["skipped"] == skipped and clean["errors"] == []
+    assert ("conflict_marker_left", 1) in [(e["kind"], e.get("result_line")) for e in found["errors"]]
+    if skipped is not None:
+        assert [i["kind"] for i in found["info"]] == ["file_skipped"]
+        # without markers the same inputs stay a plain skip
+        clean = cl.verify_item({"path": "x", "base": base, "ours": ours, "theirs": theirs, "result": b"ours\ntheirs\n",
+                                "explicit": False}, "normalize", False)
+        assert clean["skipped"] == skipped and clean["errors"] == []
 
 
 def test_skipped_kind_keeps_marker_like_lines_a_side_already_had():
@@ -744,3 +751,83 @@ def test_renamed_paths_reads_git_rename_detection(tmp_path, capsys):
     repo = cl.open_repo(sb.root)
     assert cl.renamed_paths(repo, "HEAD^1~1", "HEAD^1") == {}                 # main only edited ren.txt
     assert cl.renamed_paths(repo, "HEAD^1~1", "HEAD^2") == {"renamed.txt": "ren.txt"}
+
+
+def modify_delete_merge(tmp_path, capsys, deleter: str = "feature") -> Sandbox:
+    """One side deletes g.txt, the other edits it (changes b, adds main-add); the merge stops on modify/delete."""
+    sb = Sandbox(tmp_path / "r", capsys)
+    (tmp_path / "r").mkdir()
+    sb.git("init", "-q", "-b", "main")
+    sb.write("g.txt", ["a", "b", "c"])
+    sb.commit("base")
+    sb.git("checkout", "-q", "-b", "feature")
+    if deleter == "feature":
+        sb.git("rm", "-q", "g.txt")
+    else:
+        sb.write("g.txt", ["a", "B-feat", "c", "feat-add"])
+    sb.commit("feature")
+    sb.git("checkout", "-q", "main")
+    if deleter == "feature":
+        sb.write("g.txt", ["a", "B-main", "c", "main-add"])
+    else:
+        sb.git("rm", "-q", "g.txt")
+    sb.commit("main")
+    sb.git("merge", "--no-edit", "feature", check=False)
+    return sb
+
+
+def test_modify_delete_kept_file_that_loses_the_edit_fails_on_every_path(tmp_path, capsys):
+    sb = modify_delete_merge(tmp_path, capsys)
+    sb.write("g.txt", ["a", "b", "c"])                         # keep the file, revert main's edit to the base
+    for args in (("--json", "verify"), ("--json", "verify", "g.txt")):
+        code, out, err = sb.run(*args)
+        rep = json.loads(out)
+        assert code == 1, (args, err)
+        assert ("addition_dropped", "ours", "main-add") in [(e["kind"], e["side"], e["text"]) for e in rep["errors"]]
+        assert rep["files"][0]["skipped"] is None
+    code, out, _ = sb.run("verify")
+    assert code == 1 and "PASS" not in out and "main-add" in out
+    sb.git("add", "g.txt")
+    sb.git("commit", "-q", "--no-edit")
+    code, out, _ = sb.run("--json", "verify", "--commit", "HEAD")
+    errors = json.loads(out)["errors"]
+    assert code == 1 and ("addition_dropped", "ours", "main-add") in [(e["kind"], e["side"], e["text"]) for e in errors]
+
+
+def test_modify_delete_kept_file_that_loses_the_edit_fails_when_the_other_side_deleted(tmp_path, capsys):
+    sb = modify_delete_merge(tmp_path, capsys, deleter="main")
+    sb.write("g.txt", ["a", "b", "c"])
+    code, out, err = sb.run("--json", "verify", "g.txt")
+    errors = json.loads(out)["errors"]
+    assert code == 1, err
+    assert ("addition_dropped", "theirs", "feat-add") in [(e["kind"], e["side"], e["text"]) for e in errors]
+
+
+def test_modify_delete_kept_file_with_the_edit_passes(tmp_path, capsys):
+    sb = modify_delete_merge(tmp_path, capsys)
+    sb.write("g.txt", ["a", "B-main", "c", "main-add"])
+    code, out, err = sb.run("--json", "verify", "g.txt")
+    assert code == 0, err
+    assert json.loads(out)["errors"] == []
+    sb.git("add", "g.txt")
+    sb.git("commit", "-q", "--no-edit")
+    code, out, _ = sb.run("--json", "verify", "--commit", "HEAD")
+    assert code == 0 and json.loads(out)["errors"] == []
+
+
+def test_modify_delete_taking_the_deletion_stays_skipped(tmp_path, capsys):
+    sb = modify_delete_merge(tmp_path, capsys)
+    sb.git("rm", "-q", "g.txt")
+    code, out, err = sb.run("--json", "verify")
+    rep = json.loads(out)
+    assert code == 0, err
+    assert rep["errors"] == [] and rep["files"][0]["skipped"] == "modify_delete"
+    assert [i["kind"] for i in rep["info"]] == ["file_skipped"]
+
+
+def test_modify_delete_kept_file_with_markers_still_fails(tmp_path, capsys):
+    sb = modify_delete_merge(tmp_path, capsys)
+    sb.write("g.txt", ["<<<<<<< HEAD", "a", "B-main", "c", "main-add", "=======", "a", "b", "c", ">>>>>>> feature"])
+    code, out, err = sb.run("--json", "verify", "g.txt")
+    assert code == 1, err
+    assert "conflict_marker_left" in [e["kind"] for e in json.loads(out)["errors"]]

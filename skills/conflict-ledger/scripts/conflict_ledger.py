@@ -21,7 +21,7 @@ import tempfile
 from collections import Counter
 from pathlib import Path
 
-__version__ = "0.1.3"
+__version__ = "0.1.4"
 
 EXIT_OK, EXIT_ERROR, EXIT_WARN, EXIT_INPUT = 0, 1, 2, 3
 SIDES = ("ours", "theirs")
@@ -1066,8 +1066,16 @@ def verify_item(item: dict, eol: str, ignore_ws: bool) -> dict:
     result_deleted = item.get("result") is None
     if any(is_binary(x) for x in present):
         kind = "binary"
+    elif item["base"] is not None and (item["ours"] is None) != (item["theirs"] is None) and not result_deleted:
+        # 한쪽이 지웠는데 결과가 파일을 남겼다: 지움을 받아들이지 않았으니 지운 쪽을 base 와 같다고 보고
+        # 고친 쪽 기준으로 줄 감사를 한다(고친 쪽의 추가·수정이 사라졌으면 기존 오류 종류로 보고).
+        kind = "text"
+        item = dict(item)
+        for side in ("ours", "theirs"):
+            if item[side] is None:
+                item[side] = item["base"]
     elif item["base"] is not None and (item["ours"] is None or item["theirs"] is None):
-        kind = "modify_delete"      # 한쪽이 파일을 지웠다: 진짜 수정/삭제(지움을 받아들인 결과도 여기)
+        kind = "modify_delete"      # 지움을 받아들인 결과(또는 양쪽이 지움): 줄 감사를 건너뛴다
     elif result_deleted:
         # 어느 쪽도 지우지 않은 파일을 해결이 지웠다(git rm 등): 건너뛰지 않고 빈 결과로 감사한다.
         # 양쪽(또는 바꾼 한쪽)이 더한 줄은 addition_dropped, 둘 다 둔 줄은 base_line_lost 오류가 된다.
