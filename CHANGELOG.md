@@ -3,6 +3,19 @@
 All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [0.1.4] - 2026-11-14
+
+A bug-fix release. Finding kinds, messages, `--json` fields and `SKILL.md` (apart from its version number) do not
+change.
+
+### Fixed
+- `verify` no longer passes a modify/delete resolution that keeps the file but loses the edit of the side that kept it. When one side deleted a file and the result still has it, the deletion was not taken, so the deleted side is now read as the base and the file is line-audited against the side that edited it: a line that side added or changed and the result lacks is reported as `addition_dropped` (or another existing error kind) and the run exits 1, with or without PATH and in `verify --commit`. Before, such a file was skipped as `file_skipped` (reason `modify_delete`) and the run printed `PASS` with exit 0. Taking the deletion (`git rm`, or a merge commit without the path) is still `file_skipped` with exit 0, and a conflict marker left in a kept file is still `conflict_marker_left` (exit 1). A resolution that passed before only because it kept a modify/delete file untouched can now fail.
+
+**Known issues (still open):**
+- The evaluation's mean score gain is partly the receipt line, which the baseline run cannot produce.
+- `scan` shows `ours: (deleted)` for an insertion made only on the other side.
+- Given only image files, an agent may look at the pictures instead of running the script. The script does not compare images (it reports `binary`, exit 3); compare them by hand.
+
 ## [0.1.3] - 2026-11-14
 
 An evaluation-scope release. The audit is the same as in 0.1.2: findings, exit codes, `--json` fields and
@@ -81,6 +94,7 @@ problem kind (`skill_folder`) are new.
 
 The issues known at 0.1.0 are listed under 0.1.1: fixed ones under Fixed, those that remain under Known issues.
 
+[0.1.4]: https://github.com/LeeGyeongPil/conflict-ledger/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/LeeGyeongPil/conflict-ledger/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/LeeGyeongPil/conflict-ledger/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/LeeGyeongPil/conflict-ledger/compare/v0.1.0...v0.1.1
