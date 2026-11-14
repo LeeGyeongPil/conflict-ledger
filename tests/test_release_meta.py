@@ -1,4 +1,4 @@
-"""AC-7 (release part): every place that names the version says the same thing, and the changelog matches 0.1.3."""
+"""AC-7 (release part): every place that names the version says the same thing, and the changelog matches 0.1.4."""
 from __future__ import annotations
 
 import json
@@ -12,9 +12,9 @@ import pytest
 import conflict_ledger as cl
 
 ROOT = Path(__file__).resolve().parent.parent
-VERSION = "0.1.3"
-PREVIOUS = "0.1.2"                       # already tagged and pushed: its changelog entry and SKILL.md stay as they were
-RELEASED = ("0.1.0", "0.1.1", "0.1.2")   # pushed tags, never moved
+VERSION = "0.1.4"
+PREVIOUS = "0.1.3"                       # already tagged and pushed: its changelog entry and SKILL.md stay as they were
+RELEASED = ("0.1.0", "0.1.1", "0.1.2", "0.1.3")   # pushed tags, never moved
 
 
 def read(name: str) -> str:
@@ -56,21 +56,18 @@ def changelog_sections(text: str | None = None) -> dict[str, str]:
 
 
 def test_changelog_top_entry():
-    """0.1.3: the image-only evaluation case is removed (with the reason) and file_missing says how to fix it."""
+    """0.1.4: a modify/delete resolution that keeps the file is line-audited from the side that edited it."""
     sections = changelog_sections()
     first = next(iter(sections))
     assert re.fullmatch(rf"\[{re.escape(VERSION)}\] - \d{{4}}-\d{{2}}-\d{{2}}", first)
     entry = sections[first]
-    changed = entry.split("### Changed", 1)[1].split("###", 1)[0]
-    for needle in ("task-error-binary", "task-error-disguised-binary", "looking at the images", "6 task cases"):
-        assert needle in changed, needle
     fixed = entry.split("### Fixed", 1)[1].split("###", 1)[0]
-    assert "file_missing" in fixed and "check the path" in fixed
-    assert "receipts do not change" in entry                                 # the audit's output did not change
+    for needle in ("modify/delete", "addition_dropped", "exit 1", "file_skipped"):
+        assert needle in fixed, needle
     headings = re.findall(r"^### .*$", entry, re.M)
     assert len(headings) == len(set(headings)), headings                     # no repeated ### heading in the entry
     text = read("CHANGELOG.md")
-    for version, before in ((VERSION, PREVIOUS), (PREVIOUS, "0.1.1"), ("0.1.1", "0.1.0")):
+    for version, before in ((VERSION, PREVIOUS), (PREVIOUS, "0.1.2"), ("0.1.2", "0.1.1"), ("0.1.1", "0.1.0")):
         link = f"[{version}]: https://github.com/LeeGyeongPil/conflict-ledger/compare/v{before}...v{version}"
         assert link in text, link
 
@@ -86,10 +83,10 @@ def test_changelog_previous_entries_are_kept():
                    "step 6"):                                                        # F-3
         assert needle in fixed, needle
     assert "### Changed" in entry and "unmerged_kinds" in entry and "task-error-disguised-binary" in entry
-    # the published 0.1.2 and 0.1.1 entries stay byte for byte as in tag v0.1.2 (the 0.1.0 entry carries the
+    # the published 0.1.3, 0.1.2 and 0.1.1 entries stay byte for byte as in tag v0.1.3 (the 0.1.0 entry carries the
     # link list, which grows with every release, so it is not compared)
     tagged = changelog_sections(show_at_tag(f"v{PREVIOUS}", "CHANGELOG.md"))
-    for prefix in (f"[{PREVIOUS}] - ", "[0.1.1] - "):
+    for prefix in (f"[{PREVIOUS}] - ", "[0.1.2] - ", "[0.1.1] - "):
         now = next(t for t in sections if t.startswith(prefix))
         before = next(t for t in tagged if t.startswith(prefix))
         assert sections[now] == tagged[before], prefix
@@ -122,7 +119,8 @@ def test_readmes_show_the_version_and_the_scope_note():
         assert '"input_error": {' in text and '"kind": "binary"' in text
         assert "(2 hunks need judgement)" not in text and "덩어리 2개)" not in text and "1 hunks" not in text
         for old in RELEASED:
-            assert old not in text, old                                      # no stale version mention
+            history = text.replace("Evaluation scope from 0.1.3", "").replace("0.1.3 부터의 평가 범위", "")
+            assert old not in history, old                                   # no stale version mention (bar that note)
         # the scope note sits right after the skill-eval markers (outside them, so the table refresh keeps it)
         note = section(text, "<!-- skill-eval:end -->")
         assert "task-error-binary" in note and "task-error-disguised-binary" in note
@@ -146,7 +144,7 @@ def test_release_tags_are_untouched(version):
 
 
 def test_skill_md_body_is_the_measured_one():
-    """0.1.3 re-measures the SKILL.md that 0.1.2 measured: only the version line may differ."""
+    """0.1.4 re-measures the SKILL.md that 0.1.3 measured: only the version line may differ."""
     tagged = show_at_tag(f"v{PREVIOUS}", "skills/conflict-ledger/SKILL.md")
     assert f'version: "{PREVIOUS}"' in tagged
     expected = tagged.replace(f'version: "{PREVIOUS}"', f'version: "{VERSION}"', 1)

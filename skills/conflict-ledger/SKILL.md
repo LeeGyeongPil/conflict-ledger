@@ -4,7 +4,7 @@ description: Classifies git merge, rebase and cherry-pick conflict hunks against
 license: MIT
 compatibility: Python 3.10+ (standard library only) and git 2.35+. No network access.
 metadata:
-  version: "0.1.3"
+  version: "0.1.4"
 ---
 
 # Conflict ledger
