@@ -313,3 +313,69 @@ def test_file_mode_report_names_the_out_file_without_name(tmp_path, run_cli):
     assert summary[0] == summary[1] and "receipt=cl1-" in summary[0]
     code, out, _ = run_cli("--lang", "en", *common)                           # no --out: the ours file names it
     assert code == 0 and out.startswith("ours.txt: applied ")
+
+
+# --- final newline follows the source of the last line (matches git merge-file) ---
+
+def _resolve_files(tmp_path, base: bytes, ours: bytes, theirs: bytes, *extra: str) -> bytes:
+    import sys
+    from pathlib import Path
+    script = Path(cl.__file__)
+    for name, data in (("base", base), ("ours", ours), ("theirs", theirs)):
+        (tmp_path / name).write_bytes(data)
+    out = tmp_path / "out"
+    out.unlink(missing_ok=True)
+    proc = subprocess.run(
+        [sys.executable, str(script), "--lang", "en", "resolve-trivial", "--base", str(tmp_path / "base"),
+         "--ours", str(tmp_path / "ours"), "--theirs", str(tmp_path / "theirs"), "--name", "f",
+         "--out", str(out), *extra], capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr
+    return out.read_bytes()
+
+
+@pytest.mark.parametrize("extra", [(), ("--eol", "keep")])
+def test_no_final_newline_stays_absent(tmp_path, extra):
+    got = _resolve_files(tmp_path, b"a\nb\nc", b"A\nb\nc", b"a\nb\nc\nd", *extra)
+    assert got == b"A\nb\nc\nd"
+
+
+@pytest.mark.parametrize("extra", [(), ("--eol", "keep")])
+def test_crlf_without_final_newline_gets_no_crlf(tmp_path, extra):
+    got = _resolve_files(tmp_path, b"a\r\nb\r\nc", b"A\r\nb\r\nc", b"a\r\nb\r\nc\r\nd", *extra)
+    assert got == b"A\r\nb\r\nc\r\nd"
+
+
+def test_final_newline_added_by_both_sides_when_base_lacks_it(tmp_path):
+    got = _resolve_files(tmp_path, b"a\nb\nc\nd\ne", b"a\nb\nc\nd\ne\n", b"a\nb\nCx\nd\ne\n")
+    assert got == b"a\nb\nCx\nd\ne\n"
+
+
+def test_final_newline_added_by_one_side_is_kept(tmp_path):
+    got = _resolve_files(tmp_path, b"a\nb\nc\nd\ne", b"a\nb\nc\nu\nd\ne\n", b"a\nb\nc\nd\ne")
+    assert got == b"a\nb\nc\nu\nd\ne\n"
+
+
+def test_final_newline_matches_git_merge_file(tmp_path):
+    import itertools
+    import shutil
+    if shutil.which("git") is None:
+        pytest.skip("git not installed")
+    base_l, ours_l, theirs_l = "a\nb\nc\nd\ne", "z\na\nb\nc\nd\ne", "a\nb\nCx\nd\ne"
+    for eb, eo, et in itertools.product(("", "\n"), repeat=3):
+        b, o, t = base_l + eb, ours_l + eo, theirs_l + et
+        for name, data in (("b", b), ("o", o), ("t", t)):
+            (tmp_path / name).write_bytes(data.encode())
+        git = subprocess.run(["git", "merge-file", "-p", str(tmp_path / "o"), str(tmp_path / "b"), str(tmp_path / "t")],
+                             capture_output=True)
+        assert git.returncode == 0
+        assert _resolve_files(tmp_path, b.encode(), o.encode(), t.encode()) == git.stdout, (eb, eo, et)
+
+
+def test_final_newline_kept_when_inputs_have_it(tmp_path):
+    got = _resolve_files(tmp_path, b"a\nb\nc\n", b"A\nb\nc\n", b"a\nb\nc\nd\n")
+    assert got == b"A\nb\nc\nd\n"
+
+
+def test_conflict_block_at_end_still_ends_with_newline(tmp_path):
+    got = _resolve_files(tmp_path, b"a\nb", b"a\nX", b"a\nY")
+    assert got.endswith(b">>>>>>> theirs\n")

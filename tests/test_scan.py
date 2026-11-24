@@ -136,3 +136,23 @@ def test_status_reports_the_kind_of_every_unmerged_path(tmp_path, capsys):
     assert st["unmerged"] == ["data.txt", "gone.txt", "link", "new.txt", "text.txt"]
     assert st["unmerged_kinds"] == {"data.txt": "binary", "gone.txt": "modify_delete", "link": "symlink",
                                     "new.txt": "add_add", "text.txt": "text"}
+
+
+def _scan_text(tmp_path, run_cli, lang, ours, theirs):
+    for name, text in (("b", "a\nb\nc\n"), ("o", ours), ("t", theirs)):
+        (tmp_path / name).write_text(text)
+    args = [str(tmp_path / n) for n in ("b", "o", "t")]
+    return run_cli("--lang", lang, "scan", "--base", args[0], "--ours", args[1], "--theirs", args[2], "--name", "f")[1]
+
+
+def test_scan_insertion_shows_no_lines_not_deleted(tmp_path, run_cli):
+    for ours, theirs in (("a\nb\nc\n", "a\nb\nc\nd\n"), ("a\nb\nc\nd\n", "a\nb\nc\n"), ("a\nb\nc\n", "a\nX\nb\nc\n")):
+        en = _scan_text(tmp_path, run_cli, "en", ours, theirs)
+        assert "(no lines)" in en and "(deleted)" not in en
+    ko = _scan_text(tmp_path, run_cli, "ko", "a\nb\nc\n", "a\nb\nc\nd\n")
+    assert "(줄 없음)" in ko and "(삭제됨)" not in ko
+
+
+def test_scan_real_deletion_still_says_deleted(tmp_path, run_cli):
+    en = _scan_text(tmp_path, run_cli, "en", "a\nb\nc\n", "a\nc\n")
+    assert "(deleted)" in en and "(no lines)" not in en

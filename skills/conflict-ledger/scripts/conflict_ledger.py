@@ -21,7 +21,7 @@ import tempfile
 from collections import Counter
 from pathlib import Path
 
-__version__ = "0.1.4"
+__version__ = "0.1.5"
 
 EXIT_OK, EXIT_ERROR, EXIT_WARN, EXIT_INPUT = 0, 1, 2, 3
 SIDES = ("ours", "theirs")
@@ -116,6 +116,7 @@ MESSAGES: dict[str, dict[str, str]] = {
         "scan.cross_one": "git merge-file reports {count} conflict for comparison",
         "scan.auto": "auto",
         "scan.deleted": "(deleted)",
+        "scan.no_lines": "(no lines)",
         "res.edited": "{path}: {reason}; refusing to overwrite it so hand edits are not lost (nothing was written). Finish it by hand and run verify, write the machine resolution elsewhere with --out FILE, or pass --force to overwrite and discard the edits",
         "res.reason_resolved": "no conflict markers left, so it looks resolved by hand",
         "res.reason_edited": "it differs from the unresolved conflict of these three versions (a block was resolved, or lines were added or changed)",
@@ -249,6 +250,7 @@ MESSAGES: dict[str, dict[str, str]] = {
         "scan.cross_one": "비교용 git merge-file 충돌 수: {count}",
         "scan.auto": "자동",
         "scan.deleted": "(삭제됨)",
+        "scan.no_lines": "(줄 없음)",
         "res.edited": "{path}: {reason}. 손으로 고친 내용을 잃지 않도록 덮어쓰지 않음(아무것도 쓰지 않음). 손으로 마저 고친 뒤 verify 로 검사하거나, --out FILE 로 기계 해결본을 다른 곳에 쓰거나, 고친 내용을 버리고 덮어쓰려면 --force 를 줄 것",
         "res.reason_resolved": "충돌 표식이 하나도 없어 직접 해결한 파일로 보임",
         "res.reason_edited": "세 버전의 미해결 충돌 상태와 다름(덩어리를 풀었거나 줄을 추가·수정함)",
@@ -469,21 +471,29 @@ DEFAULT_MARKER_LABELS = {"ours": "ours", "base": "base", "theirs": "theirs"}
 
 
 def render_resolution(base: list[str], hunks: list[dict], whitespace: str = "ours",
-                      labels: dict[str, str] | None = None) -> tuple[list[str], list[str], list[str]]:
+                      labels: dict[str, str] | None = None,
+                      last_source: list[str] | None = None) -> tuple[list[str], list[str], list[str]]:
     """Resolve provably trivial hunks; leave the rest as diff3 conflict blocks.
 
-    labels names the three marker lines (default ours / base / theirs; in a repository the labels git wrote)."""
+    labels names the three marker lines (default ours / base / theirs; in a repository the labels git wrote).
+    last_source, if given, receives one item: where the final output line came from
+    ("base", "ours", "theirs" or "marker" for a conflict block)."""
     names = labels or DEFAULT_MARKER_LABELS
     out: list[str] = []
     applied: list[str] = []
     remaining: list[str] = []
     pos = 0
+    src = "base"
     for h in hunks:
+        if h["lo"] > pos:
+            src = "base"
         out.extend(base[pos:h["lo"]])
         cls = h["class"]
         if cls in AUTO_CLASSES:
             pick = {"ours_only": "ours", "theirs_only": "theirs", "both_same": "ours", "whitespace_only": whitespace}[cls]
             out.extend(h[pick])
+            if h[pick]:
+                src = pick
             applied.append(h["id"])
         else:
             out.append(f"<<<<<<< {names['ours']}")
@@ -494,8 +504,13 @@ def render_resolution(base: list[str], hunks: list[dict], whitespace: str = "our
             out.extend(h["theirs"])
             out.append(f">>>>>>> {names['theirs']}")
             remaining.append(h["id"])
+            src = "marker"
         pos = h["hi"]
+    if pos < len(base):
+        src = "base"
     out.extend(base[pos:])
+    if last_source is not None:
+        last_source[:] = [src]
     return out, applied, remaining
 
 
@@ -1040,6 +1055,25 @@ def rename_pairs(repo: Repo, moved: dict[str, dict[str, str]], p1: str, p2: str,
 
 # --------------------------------------------------------------------------- verification driver
 
+def final_newline(item: dict, source: str) -> bool:
+    """Whether the resolved file ends with a newline: a three-way merge of the three files' final-newline flags.
+
+    source is where the last output line came from (see render_resolution)."""
+    def flag(key: str) -> bool:
+        data = item.get(key)
+        return data is None or data[-1:] == b"\n"
+    nb, no, nt = flag("base"), flag("ours"), flag("theirs")
+    if source == "marker":
+        return True
+    if source in ("ours", "theirs"):
+        return no if source == "ours" else nt
+    if no != nb:
+        return no
+    if nt != nb:
+        return nt
+    return nb
+
+
 def lines_of(data: bytes | None, eol: str) -> list[str]:
     return [] if data is None else split_lines(data, eol)
 
@@ -1442,7 +1476,8 @@ def cmd_scan(args: argparse.Namespace, t: Translator) -> int:
         base, ours, theirs = (lines_of(next(i for i in items if i["path"] == entry["path"])[k], args.eol) for k in ("base", "ours", "theirs"))
         for h in build_hunks(base, ours, theirs):
             mode = t("scan.auto") if h["class"] in AUTO_CLASSES else t("scan.judge")
-            one = lambda xs: clip(xs[0]) if xs else t("scan.deleted")    # noqa: E731 - short, local, reads top to bottom
+            empty = t("scan.no_lines") if h["lo"] == h["hi"] else t("scan.deleted")   # an insertion has no base lines to delete
+            one = lambda xs: clip(xs[0]) if xs else empty    # noqa: E731 - short, local, reads top to bottom
             lines.append("  " + t("scan.hunk", id=h["id"], cls=h["class"], span=span_text(h, t), mode=mode,
                                   ours=one(h["ours"]), theirs=one(h["theirs"])))
         if entry.get("git_merge_file_conflicts") is not None:
@@ -1586,9 +1621,15 @@ def cmd_resolve(args: argparse.Namespace, t: Translator) -> int:
         if kind != "text":
             raise InputError("err.not_text", kind=kind, path=item["path"])
         base, ours, theirs = (lines_of(item[k], args.eol) for k in ("base", "ours", "theirs"))
-        merged, applied, remaining = render_resolution(base, build_hunks(base, ours, theirs), args.whitespace, names)
+        last_src: list[str] = []
+        merged, applied, remaining = render_resolution(base, build_hunks(base, ours, theirs), args.whitespace, names,
+                                                       last_src)
         crlf = item["ours"] is not None and b"\r\n" in item["ours"]
-        body = ("\r\n" if crlf else "\n").join(merged) + (("\r\n" if crlf else "\n") if merged else "")
+        eol = "\r\n" if crlf else "\n"
+        if crlf and args.eol == "keep":
+            merged = [ln[:-1] if ln[-1:] == "\r" else ln for ln in merged]   # 줄마다 \r 이 남아 \r\r\n 이 되는 것을 막는다
+        end_nl = final_newline(item, last_src[0] if last_src else "base")
+        body = eol.join(merged) + (eol if merged and end_nl else "")
         results.append({"path": item["path"], "applied": applied, "remaining": remaining, "written": False,
                         "_body": body, "_dest": dest, "_item": item})
     # 쓰기 전에 모든 대상을 검사한다: 손으로 고친 흔적(푼 덩어리, 더한 줄)이 하나라도 있으면 아무 파일도 쓰지 않고 멈춘다
