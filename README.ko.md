@@ -23,8 +23,6 @@ git merge·rebase·cherry-pick 충돌을 위한 에이전트 스킬입니다. �
 ```
 **Agent Skills 표준을 읽는 다른 에이전트** — `skills/conflict-ledger` 를 에이전트의 스킬 폴더(예: 프로젝트의 `.agents/skills/`)로 복사합니다.
 
-**Codex CLI** — `skills/conflict-ledger` 를 프로젝트의 `.agents/skills/` 로 복사합니다.
-
 필요한 것: Python 3.10+ (표준 라이브러리만)와 git 2.35+. 네트워크는 쓰지 않습니다. 깨끗한 Debian·Ubuntu 이미지에서는 `apt-get install -y git python3`.
 
 ## 30초 체험
@@ -331,11 +329,11 @@ python3 skills/conflict-ledger/scripts/conflict_ledger.py --lang ko verify --bas
 | 필요 없을 때 안 불림 | 12/12 |
 | 스킬로 푼 작업 | 6/6 |
 | 스킬 없이 푼 작업(기준선) | 1/6 |
-| 평균 점수 차이(Δ) | +0.50 |
+| 평균 점수 차이(Δ) | +0.52 |
 | 가짜 스크립트를 잡아낸 비율 | 6/6 |
-| Codex CLI | 작업 6/6 통과 · 확인됨 |
+| Codex CLI | 미검증 |
 
-Claude Code 2.1.322 · sonnet · 케이스마다 3회 · 2026-11-14 측정 · codex-cli 0.154.0
+Claude Code 2.1.322 · sonnet · 케이스마다 3회 · 2026-11-24 측정 · codex-cli 0.154.0
 <!-- skill-eval:end -->
 
 0.1.3 부터의 평가 범위: 그림 파일(PNG) 네 장만 주던 작업 케이스(`task-error-binary`)를 평가 세트에서 뺐습니다. 공개 전 평가 세 번 연속으로 opus 가 이 케이스에서 한 번 이상 스크립트를 돌리지 않고 그림을 직접 보고 답했고(sonnet·haiku 는 스크립트를 돌림), 그림은 이 스킬이 감사하는 대상이 아닙니다. 스크립트도 `binary`(종료 3)로 알려 줄 뿐입니다. 바이너리 처리는 테스트 묶음(실제 병합에서 텍스트 파일 옆의 바이너리 파일 포함)과, 모든 모델에서 재는 오류 경로 작업 `task-error-disguised-binary`(이름은 `.txt`, 내용은 바이너리)가 계속 확인합니다. 평가는 발동 12개·미발동 12개·작업 6개입니다.

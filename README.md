@@ -23,8 +23,6 @@ Current version: 0.1.5 — see [CHANGELOG.md](CHANGELOG.md).
 ```
 **Other agents that read the Agent Skills standard** — copy `skills/conflict-ledger` into the agent's skills folder (for example `.agents/skills/` in a project).
 
-**Codex CLI** — copy `skills/conflict-ledger` into `.agents/skills/` of your project.
-
 Requirements: Python 3.10+ (standard library only) and git 2.35+. No network access. Run on a clean Debian or Ubuntu image: `apt-get install -y git python3`.
 
 ## Try it in 30 seconds
@@ -331,11 +329,11 @@ Output is English or Korean: `--lang en|ko` beats `CONFLICT_LEDGER_LANG`, which 
 | Stays quiet when it should not | 12/12 |
 | Tasks solved with the skill | 6/6 |
 | Tasks solved without it (baseline) | 1/6 |
-| Mean score gain (Δ) | +0.50 |
+| Mean score gain (Δ) | +0.52 |
 | Tasks that catch a broken script | 6/6 |
-| Codex CLI | 6/6 tasks · verified |
+| Codex CLI | not verified |
 
-Measured 2026-11-14 with Claude Code 2.1.322 · sonnet · 3 runs per case · codex-cli 0.154.0
+Measured 2026-11-24 with Claude Code 2.1.322 · sonnet · 3 runs per case · codex-cli 0.154.0
 <!-- skill-eval:end -->
 
 Evaluation scope from 0.1.3: the task case that gave the agent only four PNG images (`task-error-binary`) was removed from the evaluation set. In three pre-release evaluations in a row, opus answered it at least once by looking at the images instead of running the script (sonnet and haiku ran it), and images are not what this skill audits: the script only reports them as `binary` (exit 3). Binary handling is still checked by the test suite, including a binary file next to a text file in a real merge, and by the error-path task `task-error-disguised-binary` (binary content behind `.txt` names), which is measured on every model. The evaluation has 12 trigger, 12 non-trigger and 6 task cases.
