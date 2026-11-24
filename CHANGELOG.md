@@ -3,6 +3,17 @@
 All notable changes to this project are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [0.1.5] - 2026-11-24
+
+### Fixed
+- `resolve-trivial` no longer adds a newline (or `\r\n`) after the last line when that line came from a side without one. Whether the file ends with a newline is now merged three ways from the base, ours and theirs files (all 8 combinations match `git merge-file`), instead of assuming the three inputs agree. A result that ends in a conflict-marker block still ends with a newline.
+- `--eol keep` on CRLF files no longer writes a doubled `\r\r\n` line ending.
+- `scan` no longer shows `ours: (deleted)` (or `theirs:`) for the side that did not touch an insertion; it shows `(no lines)` (Korean `(줄 없음)`). `(deleted)` stays for a side that really removed base lines. `--json` is unchanged.
+
+**Known issues (still open):**
+- The evaluation's mean score gain is partly the receipt line, which the baseline run cannot produce.
+- Given only image files, an agent may look at the pictures instead of running the script. The script does not compare images (it reports `binary`, exit 3); compare them by hand.
+
 ## [0.1.4] - 2026-11-14
 
 A bug-fix release. Finding kinds, messages, `--json` fields and `SKILL.md` (apart from its version number) do not
@@ -94,6 +105,7 @@ problem kind (`skill_folder`) are new.
 
 The issues known at 0.1.0 are listed under 0.1.1: fixed ones under Fixed, those that remain under Known issues.
 
+[0.1.5]: https://github.com/LeeGyeongPil/conflict-ledger/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/LeeGyeongPil/conflict-ledger/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/LeeGyeongPil/conflict-ledger/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/LeeGyeongPil/conflict-ledger/compare/v0.1.1...v0.1.2

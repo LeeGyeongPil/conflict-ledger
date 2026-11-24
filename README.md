@@ -4,7 +4,7 @@
 
 An agent skill for git merge, rebase and cherry-pick conflicts. When your coding agent resolves a conflict, the bundled Python script classifies every hunk against the common ancestor (the merge base) and then checks, line by line, that the result kept every change from both sides. A resolution can pass the tests and still silently drop one side's work; this audit catches that before the commit.
 
-Current version: 0.1.4 — see [CHANGELOG.md](CHANGELOG.md).
+Current version: 0.1.5 — see [CHANGELOG.md](CHANGELOG.md).
 
 ![demo run: two wrong resolutions are flagged, the combined one passes](docs/images/01-hero.png)
 *`demo` builds a throwaway repository with a real conflict. Taking "ours" or "theirs" wholesale gets exit code 1; combining both sides gets 0.*
@@ -390,7 +390,7 @@ uv sync && uv run pytest -q
 `evals/` holds 12 trigger, 12 non-trigger and 6 task cases in the `claude plugin eval` format (`evals/fixtures/` has the inputs); `tools/build_evals.py` regenerates them.
 
 ## Changelog
-Current version: 0.1.4. Changes and known issues for every release are in [CHANGELOG.md](CHANGELOG.md).
+Current version: 0.1.5. Changes and known issues for every release are in [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 MIT

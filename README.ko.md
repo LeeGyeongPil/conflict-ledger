@@ -4,7 +4,7 @@
 
 git merge·rebase·cherry-pick 충돌을 위한 에이전트 스킬입니다. 코딩 에이전트가 충돌을 풀면, 번들 Python 스크립트가 모든 덩어리(hunk)를 공통 조상(병합 기준점, base)에 대조해 분류하고, 결과가 양쪽 변경을 줄 단위로 모두 남겼는지 검사합니다. 해결 결과가 테스트를 통과해도 한쪽 작업이 조용히 사라질 수 있는데, 이 감사가 커밋 전에 그것을 잡습니다.
 
-현재 버전: 0.1.4 — [CHANGELOG.md](CHANGELOG.md) 참고.
+현재 버전: 0.1.5 — [CHANGELOG.md](CHANGELOG.md) 참고.
 
 ![데모 실행: 잘못된 해결 두 개는 걸리고, 양쪽을 합친 해결은 통과](docs/images/01-hero.ko.png)
 *`demo` 는 진짜 충돌이 있는 임시 저장소를 만듭니다. "ours"나 "theirs"를 통째로 고르면 종료 코드 1, 양쪽을 합치면 0 입니다.*
@@ -390,7 +390,7 @@ uv sync && uv run pytest -q
 `evals/` 에는 `claude plugin eval` 형식의 발동 12개·미발동 12개·작업 6개 케이스가 있고(입력은 `evals/fixtures/`), `tools/build_evals.py` 가 다시 만듭니다.
 
 ## Changelog (변경 기록)
-현재 버전: 0.1.4. 릴리스마다 바뀐 점과 알려진 문제는 [CHANGELOG.md](CHANGELOG.md) 에 있습니다.
+현재 버전: 0.1.5. 릴리스마다 바뀐 점과 알려진 문제는 [CHANGELOG.md](CHANGELOG.md) 에 있습니다.
 
 ## License
 MIT
