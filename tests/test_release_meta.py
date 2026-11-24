@@ -1,4 +1,4 @@
-"""AC-7 (release part): every place that names the version says the same thing, and the changelog matches 0.1.4."""
+"""AC-7 (release part): every place that names the version says the same thing, and the changelog matches 0.1.5."""
 from __future__ import annotations
 
 import json
@@ -12,9 +12,9 @@ import pytest
 import conflict_ledger as cl
 
 ROOT = Path(__file__).resolve().parent.parent
-VERSION = "0.1.4"
-PREVIOUS = "0.1.3"                       # already tagged and pushed: its changelog entry and SKILL.md stay as they were
-RELEASED = ("0.1.0", "0.1.1", "0.1.2", "0.1.3")   # pushed tags, never moved
+VERSION = "0.1.5"
+PREVIOUS = "0.1.4"                       # already tagged and pushed: its changelog entry and SKILL.md stay as they were
+RELEASED = ("0.1.0", "0.1.1", "0.1.2", "0.1.3", "0.1.4")   # pushed tags, never moved
 
 
 def read(name: str) -> str:
@@ -62,12 +62,12 @@ def test_changelog_top_entry():
     assert re.fullmatch(rf"\[{re.escape(VERSION)}\] - \d{{4}}-\d{{2}}-\d{{2}}", first)
     entry = sections[first]
     fixed = entry.split("### Fixed", 1)[1].split("###", 1)[0]
-    for needle in ("modify/delete", "addition_dropped", "exit 1", "file_skipped"):
+    for needle in ("resolve-trivial", "newline", "git merge-file", "conflict-marker"):
         assert needle in fixed, needle
     headings = re.findall(r"^### .*$", entry, re.M)
     assert len(headings) == len(set(headings)), headings                     # no repeated ### heading in the entry
     text = read("CHANGELOG.md")
-    for version, before in ((VERSION, PREVIOUS), (PREVIOUS, "0.1.2"), ("0.1.2", "0.1.1"), ("0.1.1", "0.1.0")):
+    for version, before in ((VERSION, PREVIOUS), (PREVIOUS, "0.1.3"), ("0.1.3", "0.1.2"), ("0.1.2", "0.1.1"), ("0.1.1", "0.1.0")):
         link = f"[{version}]: https://github.com/LeeGyeongPil/conflict-ledger/compare/v{before}...v{version}"
         assert link in text, link
 
@@ -98,8 +98,9 @@ def test_known_issues_hold_only_what_is_left():
     entry = next(iter(changelog_sections().values()))
     known = entry.split("**Known issues (still open):**", 1)[1]
     items = [line for line in known.splitlines() if line.startswith("- ")]
-    assert len(items) == 3
-    assert "receipt" in items[0] and "ours: (deleted)" in items[1] and "image" in items[2]         # Q-12, F-2, images
+    assert len(items) == 2
+    assert "receipt" in items[0] and "image" in items[1]                      # Q-12, images
+    assert "ours: (deleted)" not in known                                    # fixed in 0.1.5
     assert "file_missing" not in known                                       # fixed in 0.1.3
 
 
